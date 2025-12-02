@@ -10,7 +10,7 @@ The BC AF Trade Tool is an agriculture and food-specific tool to view trade valu
 **
    b. Filter export data for agrifood HS8 codes using **_HS8X_2022_AAFC_REF.csv_**
 
-   c. Filter import data for agrifood HS10 codes using** _HS10X_2022_AAFC_REF.csv_**
+   c. Filter import data for agrifood HS10 codes using** _HS10M_2022_AAFC_REF.csv_**
 
    d. Bind all years of export together and create **_'Estimate'_** variable to identify exports
 
