@@ -8,6 +8,7 @@ The BC AF Trade Tool is an agriculture and food-specific tool to view trade valu
 
    a. Loop through 2003-2024 and load data from **_https://search.open.canada.ca/opendata/?sort=metadata_modified+desc&search_text=cimt&page=1_
 **
+
    b. Filter export data for agrifood HS8 codes using **_HS8X_2022_AAFC_REF.csv_**
 
    c. Filter import data for agrifood HS10 codes using** _HS10M_2022_AAFC_REF.csv_**
