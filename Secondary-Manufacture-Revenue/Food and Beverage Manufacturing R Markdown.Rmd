@@ -612,15 +612,15 @@ Remember to replace "\\" with "/"
 sharepoint_path <- 
   "C:/Users/lebautis/Government of BC/SICI Data Library Subsite - Unpublished Data"
 
-# Writes CSV files to the Data Library (Unpublished)
-write.csv(
-  NAICS4,
-  file = file.path(sharepoint_path, "FoodBevManu_NAICS4.csv"),
-  row.names = FALSE)
+# Create a named list of data frames and file names
+dfs <- list(
+  "FoodBevManu_NAICS4.csv" = NAICS4,
+  "FoodBevManu_NAICS3.csv" = NAICS3
+)
 
-write.csv(
-  NAICS3,
-  file = file.path(sharepoint_path, "FoodBevManu_NAICS3.csv"),
-  row.names = FALSE)
+# Loop through and write each CSV file to the Data Library (Unpublished)
+for (fname in names(dfs)) {
+  fwrite(dfs[[fname]], file.path(sharepoint_path, fname))
+}
 
 ```
