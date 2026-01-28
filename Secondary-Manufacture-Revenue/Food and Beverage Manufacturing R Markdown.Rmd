@@ -431,16 +431,14 @@ sub-totals matches the total.
 
 ```{r 3c Residual calculation}
 
-## Residual categories are created by subtracting the known sub‑industry totals from their parent category, thus allowing the model to calculate and display an “other” industry row (one for food, one for beverages, tobacco and cannabis) that replaces suppressed rows and ensures that the sum of sub-totals matches the total. 
-
 # Combine NAICS levels 3 and 4 in the same object 
 NAICS3and4 <- rbind(NAICS3, NAICS4)
 
-# Define set of NAICS codes used to assemble 311R (residual, other food manuf.): 
+# Define set of NAICS codes used to assemble 3119 (residual, other food manuf.): 
 # All except 3119 (Other food manuf.)
 naics_set311 <- c("311", "3111", "3112", "3113", "3114"
                   , "3115", "3116", "3117", "3118")
-label311 <- "3119 Other food manufacturing"
+
 
 # Subtotals for each code within groups
 subtotals <- NAICS3and4[NAICS_Code %in% naics_set311,
@@ -466,7 +464,7 @@ wide311[, `:=`(
               - fifelse(is.na(`3116`), 0, `3116`)
               - fifelse(is.na(`3117`), 0, `3117`)
               - fifelse(is.na(`3118`), 0, `3118`),
-  NAICS_Code = label311,
+  NAICS_Code = "3119",
   NAICS      = "3119 Other food manufacturing"
 )]
 
@@ -479,7 +477,6 @@ wide311 <- wide311 %>% rename(val_norm = val_norm311)
 
 # Define set of NAICS codes to assemble 312R (residual, other beverage manuf.)
 naics_set312 <- c("312", "3121")
-label312 <- "3122 Other beverage, tobacco and cannabis manufacturing"
 
 # Subtotals for each code within groups
 subtotals312 <- NAICS3and4[NAICS_Code %in% naics_set312,
@@ -497,8 +494,8 @@ wide312 <- dcast(
 wide312[, `:=`(
   val_norm312  = fifelse(is.na(`312`), 0, `312`)
               - fifelse(is.na(`3121`), 0, `3121`),
-  NAICS_Code = label312,
-  NAICS      = "3122 Other beverage, tobacco and cannabis manufacturing"
+  NAICS_Code = "3119",
+  NAICS      = "3129 Other beverage and tobacco product manufacturing"
 )]
 
 # Drop unused columns for the join"
