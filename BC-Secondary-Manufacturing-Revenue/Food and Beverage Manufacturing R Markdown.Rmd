@@ -13,32 +13,31 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Introduction
 
-This R Markdown document is intended to facilitate automation in the loading of the Statistics Canada's Table: 16-10-0117-01 (formerly CANSIM 301-0008): Principal statistics for manufacturing industries.
+This R Markdown loads Statistics Canada's Table: 16-10-0117-01 : Principal statistics for manufacturing industries.
 
 There are 4 parts to script: 1. Load data from Statistics Canada via R API 2. Data cleaning 3. Addressing data suppression: hierarchy imputation, time series interpolation and row-level residuals 4. Export and save the output (.csv) in the Data Library.
 
-The following document should be interpreted using the color legend:
-- Blue: R functions that manipulate the data
-- Black: object names and partial outputs
-- Green: database items (column labels and values)
-- Orange: explanatory notes for each step
+The following document should be interpreted using the color legend: - Blue: R functions that manipulate the data - Black: object names and partial outputs - Green: database items (column labels and values) - Orange: explanatory notes for each step
 
-# 1. Load data from Statistics Canada via R API
+# 1. Load data from Statistics Canada via API
 
-This section connects directly to Statistics Canada’s online database and automatically downloads the manufacturing statistics table using the R API. The code loads specialized packages that make it easier to pull large datasets and quickly inspect their structure. Once the table is retrieved, the script provides a brief preview of what the data looks like, helping the user confirm that the correct file has been imported before moving on.
+This section connects directly to Statistics Canada’s online database and automatically downloads the manufacturing statistics table via API. The code loads specialized packages that make it easier to pull large datasets and quickly inspect their structure. Once the table is retrieved, the script provides a brief preview of what the data looks like, helping the user confirm that the correct file has been imported before moving on.
 
-Ensure you have the following packages installed:
-- **cansim:** package that allows STC data to be pulled into the environment using API 
-- **data.table:** enahnced version enabling hihg-performance data manipulation for datasets that take up about 1GB in RAM or higher
+Ensure you have the following packages installed: - **cansim:** package that allows STC data to be pulled into the environment using API - **data.table:** enahnced version enabling hihg-performance data manipulation for datasets that take up about 1GB in RAM or higher
 
 ```{r load data}
 
 # Install packages if needed. Use install.packages("name, name", ...) if errors appear
-library(cansim)
-library(data.table)
-library(dplyr)
-library(tidyr)
-library(stringr)
+
+packages <- c(
+  "cansim",
+  "data.table",
+  "dplyr",
+  "tidyr",
+  "stringr"
+)
+
+lapply(packages, library, character.only = TRUE)
 
 # Load Statistics Canada table 16-10-0117-01
 dt <- as.data.table(get_cansim("16-10-0117-01"))
@@ -57,8 +56,17 @@ dt[1:6]
 
 # 2. Data Cleaning
 
-Cleaning the data entails assigning the desired names and categories to the columns. Formulas are also used to ensure proper handling of text and numeric values. Here, the script standardizes and organizes the raw dataset so it can be used reliably for later steps. It renames long or inconsistent column titles, converts important fields to the correct data types, removes duplicates, fixes formatting issues in the NAICS codes, and filters the data to only include the provinces and industries relevant to food and beverage manufacturing. The result is a clean, simplified dataset with only the necessary variables, ensuring that all numbers and labels are consistent and ready for analysis.
+Cleaning the data entails assigning the desired names and categories to the columns. Formulas are also used to ensure proper handling of text and numeric values. Here, the script standardizes and organizes the raw dataset so it can be used reliably for later steps:
 
+-   standardize column names: renames long or inconsistent column titles
+
+-   clean contents:f ixes formatting issues in the NAICS codes, removes duplicates
+
+-   set column types: converts important fields to the correct data types
+
+-   filters the data: usually to only include the provinces and industries relevant to food and beverage manufacturing.
+
+The result is a clean, simplified dataset with only the necessary variables, ensuring that all numbers and labels are consistent and ready for analysis. An alternative approach would be to specify the vectors using a vector list. There are 2,361 unique vectors entailed if that approach were to be implemented.
 
 ```{r data cleaning}
 # Create a clean working copy
@@ -133,15 +141,13 @@ FoodBev_Manu <- FoodBev_Manu[
 ]
 ```
 
-# 3. Addressing data suppression: hierarchy imputation, time series interpolation and row-level residuals
+# 3. Addressing data suppression:
 
-This section fills in missing values that Statistics Canada suppresses for confidentiality. First, the script rebuilds higher‑level industry totals by summing the more detailed 5‑ and 6‑digit NAICS categories and comparing them to existing 4‑digit values, ensuring the most complete figure is used. Next, the script aggregates 4‑digit industries into 3‑digit totals and uses time-series interpolation only for British Columbia where consecutive years of data are suppressed but values exist on either side. Finally, residual categories are created by subtracting known sub‑industry totals from their parent category, allowing the model to calculate and display an “other” industry row (one for food, one for beverages, tobacco and cannabis) that replaces suppressed rows and ensures that the sum of sub-totals matches the total. The script also tags all imputed or interpolated cells in red font so they can be easily identified.
+This section fills in missing values that Statistics Canada suppresses for confidentiality through hierarchy imputation, time series interpolation, adding row-level residuals and adding font style to flag interpolated and imputed data.
 
+**a. Hiearchy imputation:** the script rebuilds higher‑level industry totals by summing the more detailed 5‑ and 6‑digit NAICS categories and comparing them to existing 4‑digit values, ensuring the most complete figure is used.
 
-```{r NAICS 5 and 6 to NAICS 4 and NAICS 4 to 3}
-
-# 3a. Hierarchical imputation 
-
+```{r 3a Hiarchy imputation}
 # Copy original table
 NAICS5and6_to4 <- copy(FoodBev_Manu)
 
@@ -258,29 +264,17 @@ NAICS3[, c("val_norm.3", "val_norm.4") := NULL]
 
 # Replace 0 with NA in val_norm
 NAICS3[, val_norm := fifelse(val_norm == 0, NA_real_, val_norm)]
+```
 
+**b. Time series interpolation:** the script aggregates 4‑digit industries into 3‑digit totals and uses time-series interpolation only for British Columbia where consecutive years of data are suppressed but values exist on either side.
 
-# 3b. Time series interpolation
+```{r 3b Time series interpolation}
+
 ## Interpolation to address issues that can't be imputed across NAICS levels
 ## Maximum 2 years of missing data having actual data the year before and after
+## LB note: review NAICS3 & NAICS4 first on which years and codes are missing; write if/then statement on linear interpolation?
 
-NAICS3$val_norm[which(NAICS3$REF_DATE == "2022" 
-  & NAICS3$GEO == "British Columbia"  
-  & NAICS3$NAICS_Code == "312"
-  & NAICS3$Principal.statistics == "Revenue from goods manufactured")] <-
-      (NAICS3$val_norm[which(NAICS3$REF_DATE == "2021" 
-      & NAICS3$GEO == "British Columbia"  
-      & NAICS3$NAICS_Code == "312"
-      & NAICS3$Principal.statistics == "Revenue from goods manufactured")]) +
-      (((NAICS3$val_norm[which(NAICS3$REF_DATE == "2023" 
-      & NAICS3$GEO == "British Columbia"
-      & NAICS3$NAICS_Code == "312"
-      & NAICS3$Principal.statistics == "Revenue from goods manufactured")])
-      - (NAICS3$val_norm[which(NAICS3$REF_DATE == "2021" 
-      & NAICS3$GEO == "British Columbia"
-      & NAICS3$NAICS_Code == "312"
-      & NAICS3$Principal.statistics == "Revenue from goods manufactured")]))/2)
-
+# Describe step
 NAICS4$val_norm[which(NAICS4$REF_DATE == "2022" 
   & NAICS4$GEO == "British Columbia"
   & NAICS4$NAICS_Code == "3121"
@@ -298,6 +292,7 @@ NAICS4$val_norm[which(NAICS4$REF_DATE == "2022"
       & NAICS4$NAICS_Code == "3121"
       & NAICS4$Principal.statistics == "Revenue from goods manufactured")]))/2)
 
+# Describe step
 NAICS3$val_norm[which(NAICS3$REF_DATE == "2024" 
   & NAICS3$GEO == "British Columbia"
   & NAICS3$NAICS_Code == "312"
@@ -315,6 +310,7 @@ NAICS3$val_norm[which(NAICS3$REF_DATE == "2024"
       & NAICS3$NAICS_Code == "312"
       & NAICS3$Principal.statistics == "Revenue from goods manufactured")]))
 
+# Describe step
 NAICS4$val_norm[which(NAICS4$REF_DATE == "2018" 
   & NAICS4$GEO == "British Columbia"
   & NAICS4$NAICS_Code == "3115"
@@ -332,6 +328,7 @@ NAICS4$val_norm[which(NAICS4$REF_DATE == "2018"
       & NAICS4$NAICS_Code == "3115"
       & NAICS4$Principal.statistics == "Revenue from goods manufactured")]))/2)
 
+# Describe step
 NAICS4$val_norm[which(NAICS4$REF_DATE == "2018" 
   & NAICS4$GEO == "British Columbia"
   & NAICS4$NAICS_Code == "3117"
@@ -349,6 +346,7 @@ NAICS4$val_norm[which(NAICS4$REF_DATE == "2018"
       & NAICS4$NAICS_Code == "3117"
       & NAICS4$Principal.statistics == "Revenue from goods manufactured")]))/2)
 
+# Describe step
 NAICS4$val_norm[which(NAICS4$REF_DATE == "2014" 
   & NAICS4$GEO == "British Columbia"
   & NAICS4$NAICS_Code == "3117"
@@ -366,6 +364,7 @@ NAICS4$val_norm[which(NAICS4$REF_DATE == "2014"
       & NAICS4$NAICS_Code == "3117"
       & NAICS4$Principal.statistics == "Revenue from goods manufactured")]))/3)
 
+# Describe step
 NAICS4$val_norm[which(NAICS4$REF_DATE == "2015" 
   & NAICS4$GEO == "British Columbia"
   & NAICS4$NAICS_Code == "3117"
@@ -382,36 +381,36 @@ NAICS4$val_norm[which(NAICS4$REF_DATE == "2015"
       & NAICS4$GEO == "British Columbia"
       & NAICS4$NAICS_Code == "3117"
       & NAICS4$Principal.statistics == "Revenue from goods manufactured")]))/3)
+```
 
+**c. Row-level residuals:** residual categories are created by subtracting known sub‑industry (NAICS level 4) totals from their parent category (NAICS level 3), allowing the model to calculate and display an “other” industry row (one for food, one for beverages, tobacco and cannabis) that replaces suppressed rows and ensures that the sum of sub-totals matches the total. Finally, the script also tags all imputed or interpolated cells in red font (#C00000) so they can be easily identified.
 
-# 3c. Create residual categories (row-level)
-## Residual categories are created by subtracting the known sub‑industry totals from their parent category, thus allowing the model to calculate and display an “other” industry row (one for food, one for beverages, tobacco and cannabis) that replaces suppressed rows and ensures that the sum of sub-totals matches the total. 
+```{r 3b_linear_timeseries_interpolation}
 
 # Combine NAICS levels 3 and 4 in the same object 
 NAICS3and4 <- rbind(NAICS3, NAICS4)
 
-# Define set of NAICS codes used to assemble 311R (residual, other food manuf.): 
-# All except 3119 (Other food manuf.)
+# Define set of NAICS codes used to calculate the residual, 3119 Other food manufacturing
+
 naics_set311 <- c("311", "3111", "3112", "3113", "3114"
                   , "3115", "3116", "3117", "3118")
-label311 <- "311R Other food manufacturing"
 
-# Subtotals for each code within groups
+# Calculate the subtotal within the group as defined in naics_set311
 subtotals <- NAICS3and4[NAICS_Code %in% naics_set311,
   .(val_norm = sum(val_norm, na.rm = TRUE)),
   by = .(REF_DATE, GEO, Principal.statistics, UOM, NAICS_Code)
 ]
 
-# Reshape to wide and compute combo
+# Reshape or pivot to wide to then calculate residual
 wide311 <- dcast(
   subtotals,
   REF_DATE + GEO + Principal.statistics + UOM ~ NAICS_Code,
   value.var = "val_norm"
 )
 
-# Calculate residuals to override suppression
+# Calculate residuals and override suppression using if statement
 wide311[, `:=`(
-  val_norm311 = fifelse(is.na(`311`), 0, `311`)
+  val_norm = fifelse(is.na(`311`), 0, `311`)
               - fifelse(is.na(`3111`), 0, `3111`)
               - fifelse(is.na(`3112`), 0, `3112`)
               - fifelse(is.na(`3113`), 0, `3113`)
@@ -420,103 +419,117 @@ wide311[, `:=`(
               - fifelse(is.na(`3116`), 0, `3116`)
               - fifelse(is.na(`3117`), 0, `3117`)
               - fifelse(is.na(`3118`), 0, `3118`),
-  NAICS_Code = label311,
-  NAICS      = "311R Other food manufacturing"
+  NAICS_Code = "3119",
+  NAICS      = "3119 Other food manufacturing"
 )]
 
-# Drop unused columns for the join"
+# Drop unused columns for the join
 wide311 <- subset(wide311, select = -c(`311`, `3111`, `3112`, `3113`, `3114`
                                        , `3115`, `3116`, `3117`, `3118`))
 
-# Rename val_norm311 to val_norm
-wide311 <- wide311 %>% rename(val_norm = val_norm311)
+# Define set of NAICS codes used to calculate the residual, 3129 Other beverage and tobacco product manufacturing)
 
-# Define set of NAICS codes to assemble 312R (residual, other beverage manuf.)
 naics_set312 <- c("312", "3121")
-label312 <- "312R Other beverage, tobacco and cannabis manufacturing"
 
-# Subtotals for each code within groups
+
+# Calculate the subtotal within the group as defined in naics_set312
 subtotals312 <- NAICS3and4[NAICS_Code %in% naics_set312,
   .(val_norm = sum(val_norm, na.rm = TRUE)),
   by = .(REF_DATE, GEO, Principal.statistics, UOM, NAICS_Code)
 ]
 
-# Reshape wide and compute combo
+# Reshape or pivot to wide to then calculate residual
 wide312 <- dcast(
   subtotals312,
   REF_DATE + GEO + Principal.statistics + UOM ~ NAICS_Code,
   value.var = "val_norm")
 
-# Calculate residuals to override suppression
+# Calculate residuals to override suppression using if statement
 wide312[, `:=`(
-  val_norm312  = fifelse(is.na(`312`), 0, `312`)
+  val_norm  = fifelse(is.na(`312`), 0, `312`)
               - fifelse(is.na(`3121`), 0, `3121`),
-  NAICS_Code = label312,
-  NAICS      = "312R Other beverage, tobacco and cannabis manufacturing"
+  NAICS_Code = "3129",
+  NAICS      = "3129 Other beverage and tobacco product manufacturing"
 )]
 
-# Drop unused columns for the join"
+# Drop unused columns for the join
 wide312 <- subset(wide312, select = -c(`312`, `3121`))
 
-# Rename val_norm312 to val_norm
-wide312 <- wide312 %>% rename(val_norm = val_norm312)
-
-# Join the two aggregated data frames by 'Region'
+# Join (full) the two aggregated data frames
 diff_rows_NAICS3and4 <- full_join(wide311, wide312, by = c("REF_DATE", "GEO"
                           , "Principal.statistics", "UOM", "NAICS_Code"
                           , "NAICS", "val_norm"))
 
 # Final steps to add calculated rows (create custom set) and rename labels
+
+# Describe step here: combine NAICS3and4 with residual df? should we rename diff_rows to residual or something?
 NAICS3and4_with_custom <- rbindlist(list(NAICS3and4, diff_rows_NAICS3and4)
                                     , use.names = TRUE, fill = TRUE)
 
+#Describe step here: re-arrange columns?
 setorder(NAICS3and4_with_custom, REF_DATE, GEO, Principal.statistics, NAICS_Code)
 
+#Describe step here: rename?
 NAICS3and4_with_custom$NAICS_Code[
   which(NAICS3and4_with_custom$NAICS_Code == "311")] <- "311 Food Manufacturing"
 NAICS3and4_with_custom$NAICS_Code[
   which(NAICS3and4_with_custom$NAICS_Code == "312")] <- "312 Beverage and tobacco product manufacturing"
 
-# 3d. Adding red font style on imputed and interpolated cells
+```
+
+## **D. Time series interpolation**
+
+The script aggregates 4‑digit industries into 3‑digit totals and uses time-series interpolation only for British Columbia where consecutive years of data are suppressed but values exist on either side.
+
+```{r 3d Adding red font style on imputed and interpolated cells}
+
+# Describe step
 NAICS3and4_with_custom$FontColour <- "#234075"
 
+# Describe step
 NAICS3and4_with_custom$FontColour[which(NAICS3and4_with_custom$REF_DATE == "2022" 
   & NAICS3and4_with_custom$GEO == "British Columbia"  
-  & NAICS3and4_with_custom$NAICS_Code == "312")] <- "Red"
+  & NAICS3and4_with_custom$NAICS_Code == "312")] <- "#C00000"
 
+# Describe step
 NAICS3and4_with_custom$FontColour[which(NAICS3and4_with_custom$REF_DATE == "2022" 
   & NAICS3and4_with_custom$GEO == "British Columbia"
   & NAICS3and4_with_custom$NAICS_Code == "3121"
   & NAICS3and4_with_custom$Principal.statistics 
-    == "Revenue from goods manufactured")] <- "Red"
+    == "Revenue from goods manufactured")] <- "#C00000"
 
+# Describe step
 NAICS3and4_with_custom$FontColour[which(NAICS3and4_with_custom$REF_DATE == "2024" 
   & NAICS3and4_with_custom$GEO == "British Columbia"
   & NAICS3and4_with_custom$NAICS_Code == "312"
   & NAICS3and4_with_custom$Principal.statistics 
-    == "Revenue from goods manufactured")] <- "Red"
+    == "Revenue from goods manufactured")] <- "#C00000"
 
+# Describe step
 NAICS3and4_with_custom$FontColour[which(NAICS3and4_with_custom$REF_DATE == "2018" 
   & NAICS3and4_with_custom$GEO == "British Columbia"
   & NAICS3and4_with_custom$NAICS_Code == "3115"
   & NAICS3and4_with_custom$Principal.statistics 
-    == "Revenue from goods manufactured")] <- "Red"
+    == "Revenue from goods manufactured")] <- "#C00000"
 
+# Describe step
 NAICS3and4_with_custom$FontColour[which(NAICS3and4_with_custom$REF_DATE == "2018" 
   & NAICS3and4_with_custom$GEO == "British Columbia"
   & NAICS3and4_with_custom$NAICS_Code == "3117"
   & NAICS3and4_with_custom$Principal.statistics 
-    == "Revenue from goods manufactured")] <- "Red"
+    == "Revenue from goods manufactured")] <- "#C00000"
 
+# Describe step
 NAICS3and4_with_custom$FontColour[which(NAICS3and4_with_custom$REF_DATE == "2014" 
   & NAICS3and4_with_custom$GEO == "British Columbia"
   & NAICS3and4_with_custom$NAICS_Code == "3117"
   & NAICS3and4_with_custom$Principal.statistics 
-    == "Revenue from goods manufactured")] <- "Red"
+    == "Revenue from goods manufactured")] <- "#C00000"
 
+# Describe step
 NAICS3and4_with_custom$FontColour[which(NAICS3and4_with_custom$REF_DATE == "2015" 
   & NAICS3and4_with_custom$GEO == "British Columbia"
-  & NAICS3and4_with_custom$NAICS_Code == "3117")] <- "Red"
+  & NAICS3and4_with_custom$NAICS_Code == "3117")] <- "#C00000"
 
 # Restore NAICS4 while removing 3-digit rows ([311], [312]),
 ##  keeping all 4-digit rows (including residuals)
@@ -527,7 +540,6 @@ NAICS4 <- NAICS4[NAICS_Code != '312 Beverage and tobacco product manufacturing']
 # 4. Export and save the output (.csv) in the Data Library
 
 The final section writes the cleaned and fully reconstructed datasets to the Data Library in CSV format. The files are saved directly into the user’s SharePoint-synced folder so they are available for internal use and version control. By exporting both the 3‑digit and 4‑digit NAICS datasets, the script ensures that analysts can immediately use the updated numbers in dashboards, briefings, or further modeling.
-
 
 ```{r flatfile}
 
