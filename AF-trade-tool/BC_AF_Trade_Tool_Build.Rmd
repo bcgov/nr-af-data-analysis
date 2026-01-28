@@ -1,0 +1,375 @@
+---
+title: "CIMTD"
+author: "Leila Bautista and Brendan Dwyer"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+# Canadian International Merchandise Trade Database (CIMTD)
+
+This RMarkdown provides chunks of R code to load, filter and combine data from Open Government [website](https://search.open.canada.ca/opendata/?sort=metadata_modified+desc&search_text=cimt&page=1). The trade data is used by the Ministry of Agriculture and Food's Sector Insights and Corporate Initiatives (SICI) Unit to produce annual Sector Tables, Trade Dashboards and other information products.
+
+Contact [alstats\@gov.bc.ca](mailto:alstats@gov.bc.ca) for any questions.
+
+# Set-up & Library
+
+```{r Set-up, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Set working directory
+
+knitr::opts_knit$set(root.dir = "//sfp.idir.bcgov/S104/S04004/Statistics and Research/Raw Data and Information/Federal Government Sources/Canadian International Merchandise Trade/Annual")
+```
+
+```{r Library}
+
+# Load library
+library(pacman)
+p_load(dplyr,
+       data.table,
+       tidyr,
+       lubridate,
+       tictoc,
+       splitstackshape,
+       stringr)
+```
+
+# Load and read latest data
+
+```{r Export Latest}
+tic()
+
+# Step 1: Create a temporary file
+temp_file <- tempfile()
+
+# Step 2: Fetch the online file using download.file()
+# Replace 'url_of_the_file' with the actual URL of the file you want to download
+url <- "https://www150.statcan.gc.ca/n1/pub/71-607-x/2021004/zip/CIMT-CICM_Dom_Exp_2024.zip"
+download.file(url, temp_file)
+
+# Step 3: Extract the file from the temp file using unz() command
+# Replace 'file_inside_zip' with the actual name of the file inside the ZIP archive
+file_inside_zip <- "CIMT-CICM_Dom_Exp_2024/ODPFN016_202405N.csv"
+Export <- read.csv(unz(temp_file, file_inside_zip))
+
+# Step 4: Remove the temp file using unlink()
+unlink(temp_file)
+
+# Load the list of agriculture, seafood and food manufacturing HS codes 
+Commodity_REF <- fread("//sfp.idir.bcgov/S104/S04004/Statistics and Research/Raw Data and Information/Federal Government Sources/Canadian International Merchandise Trade/HS8X 2022 AAFC REF.csv",
+                       colClasses = c(HS8_Code = "character"))
+
+# Merge the file with the Commodity REF to fileter for agriculture, seafood and food manufacturing HS codes only
+Export2024 <- Export %>% 
+  rename (Date = `YearMonth.AnnéeMois`,
+          HS8_Code = `HS8`,
+          Coutnry = `Country.Pays`,
+          State = `State.État`,
+          Value = `Value.Valeur`,
+          Quantity = `Quantity.Quantité`,
+          UOM = `Unit.of.Measure.Unité.de.Mesure`
+  ) %>%
+  merge(Commodity_REF,by="HS8_Code") %>%
+  select(1:8)
+
+# reformat the date column
+Export2024$Date <- ym(Export2024$Date)
+
+# Set the working directory to the destination folder
+setwd("//sfp.idir.bcgov/S104/S04004/Statistics and Research/Raw Data and Information/Federal Government Sources/Canadian International Merchandise Trade/Annual")
+
+# Write the csv file 
+fwrite(Export2024, "Export2024.csv")  
+
+# to write code: bind with Trade FULL
+
+
+toc()
+```
+
+```{r Import Latest}
+# To be completed
+```
+
+# Load and read 1988-2002 data
+
+This chunk is to download from the Open Government website. Only Import data from 1988-2002 needed to be down because the export data 1988-2023 was downloaded through a past version of this R script.
+
+```{r Import Historic}
+
+tic()
+
+# Load the list of agriculture, seafood and food manufacturing HS codes 
+
+Commodity_REF <- fread("//sfp.idir.bcgov/S104/S04004/Statistics and Research/Raw Data and Information/Federal Government Sources/Canadian International Merchandise Trade/HS10M 2022 AAFC REF.csv",
+                       colClasses = c(HS10_Code = "character"))
+
+
+setwd("//sfp.idir.bcgov/S104/S04004/Statistics and Research/Raw Data and Information/Federal Government Sources/Canadian International Merchandise Trade/Annual")
+
+
+# Loop to load and write the data
+
+for (i in 1988:2002) {
+  
+  # Paste year (1988-2023) to standardized file path to create file name
+
+  Import_Filename <- paste0("ODPFN014_", i, "12C.csv", sep="")
+  
+  # Load each file name for all years (1988-2002)
+  
+  Import <- fread(Import_Filename,
+                  colClasses = c(HS10 = "character"))
+  
+  # Rename variables to a useable format
+  
+  ImportYear <- Import %>%
+    rename (Date = `YearMonth/AnnéeMois`,
+            HS10_Code = `HS10`,
+            Country = `Country/Pays`,
+            State = `State/État`,
+            Value = `Value/Valeur`,
+            Quantity = `Quantity/Quantité`,
+            UOM = `Unit of Measure/Unité de Mesure`
+            ) %>%
+    
+    # Merge data with Commodity_REF to filter for agriculture, seafood and food manufacturing HS Codes only
+    
+    merge(Commodity_REF,by="HS10_Code") %>%
+    
+    # Drop all other variables other than 1:8
+    
+    select(1:8)
+  
+  Import_Outfile_Start <- paste("Import", i, sep="")
+  
+  Import_Outfile <- paste(Import_Outfile_Start,".csv", sep="")
+  
+  fwrite(ImportYear, Import_Outfile)
+}
+
+toc()
+```
+
+# Append all years into 1 file
+
+The preceding code chunk has downloaded, unzipped and extracted all files from 1988 to the most recent year. The following chunks load and bind all years:
+
+1.  Exports
+
+2.  Imports
+
+3.  Trade
+
+## 1. Exports: Load and Bind All Years
+
+The code chunk under this heading is an example of how to append all annual ***import*** data frames found in the [Annual](%22\sfp.idir.bcgov\S104\S04004\Statistics%20and%20Research\Raw%20Data%20and%20Information\Federal%20Government%20Sources\Canadian%20International%20Merchandise%20Trade\Annual%22) folder and write a csv file file for data visualization.
+
+```{r Bind_ExportAnnual}
+
+tic()
+
+setwd("//sfp.idir.bcgov/S104/S04004/Statistics and Research/Raw Data and Information/Federal Government Sources/Canadian International Merchandise Trade/Annual")
+
+# Initialize an empty list to store data frames
+export_list <- list()
+
+# Loop through the years 2013 to 2023
+
+for (year in 2003:2023) {
+  # Construct the file name
+  file_name <- paste0("Export", year, ".csv")
+  
+  # Read the CSV file
+  Exportyear <- fread(file_name, colClasses = c(HS8_Code = "character"))
+  
+  # Add the data frame to the list
+  export_list[[length(export_list) + 1]] <- Exportyear
+}
+
+# Bind all data frames in the list into one data frame
+ExportFULL <- bind_rows(export_list, .id = NULL)
+
+toc()
+```
+
+```{r Write_ExportFULL}
+
+tic()
+
+# Create the ImportFULL dataframe with Date, Year, and Month columns
+ExportFULL <- ExportFULL %>%
+  mutate(
+    Year = substr(Date, 1, 4),       # Extract the first 4 characters as Year
+    Month = substr(Date, nchar(Date)-1, nchar(Date))  # Extract the last 2 characters as Month
+  )
+
+ExportFULL$Date <- ymd(paste0(ExportFULL$Year,ExportFULL$Month,"01", sep = "-"))
+
+#drop year and month columns
+ExportFULL <- ExportFULL[, -c(9, 10)]
+
+setwd("//sfp.idir.bcgov/S104/S04004/Statistics and Research/Raw Data and Information/Federal Government Sources/Canadian International Merchandise Trade")
+
+fwrite(ExportFULL, "ExportFULL.csv")
+
+toc()
+```
+
+## 2. Imports: Load and Bind All Years
+
+The code chunk under this heading is an example of how to append all annual ***import*** data frames found in the [Annual](%22\sfp.idir.bcgov\S104\S04004\Statistics%20and%20Research\Raw%20Data%20and%20Information\Federal%20Government%20Sources\Canadian%20International%20Merchandise%20Trade\Annual%22) folder and write a csv file file for data visualization.
+
+```{r Bind_ImportAnnual}
+tic()  
+
+setwd("//sfp.idir.bcgov/S104/S04004/Statistics and Research/Raw Data and Information/Federal Government Sources/Canadian International Merchandise Trade/Annual")
+
+
+# Initialize an empty list to store data frames
+import_list <- list()  
+
+# Loop through the years 1988 to 2023 
+for (year in 2003:2023) 
+  {   
+  # Construct the file name   
+  file_name <- paste0("Import", year, ".csv")      
+  # Read the CSV file   
+  Importyear <- fread(file_name, colClasses = c(HS10_Code = "character"))      
+  # Add the data frame to the list   
+  import_list[[length(import_list) + 1]] <- Importyear }  
+
+# Bind all data frames in the list into one data frame 
+ImportFULL <- bind_rows(import_list, .id = NULL)  
+
+toc()
+```
+
+```{r Write_ImportFULL}
+tic() 
+
+setwd("//sfp.idir.bcgov/S104/S04004/Statistics and Research/Raw Data and Information/Federal Government Sources/Canadian International Merchandise Trade")
+
+# Create the ImportFULL dataframe with Date, Year, and Month columns 
+ImportFULL <- ImportFULL %>%
+  mutate(Year = substr(Date, 1, 4),  
+         
+# Extract the first 4 characters as Year
+    Month = substr(Date, nchar(Date)-1, nchar(Date))) 
+
+# Extract the last 2 characters as Month
+    
+ImportFULL$Date <- ymd(paste0(ImportFULL$Year,ImportFULL$Month,"01", sep = "-")) 
+
+#drop year and month columns 
+
+ImportFULL <- ImportFULL[, -c(9, 10)]  
+
+fwrite(ImportFULL, "ImportFULL.csv")  
+                                           
+toc() 
+```
+
+## 3. Trade: Full Join Export FULL and Import FULL
+
+Need to merge both and calculate trade balance
+
+```{r Read_ExpImpFULL}
+
+# Run if you do not have ExportFULL and ImportFULL in the environment
+
+tic()
+
+setwd("//sfp.idir.bcgov/S104/S04004/Statistics and Research/Raw Data and Information/Federal Government Sources/Canadian International Merchandise Trade")
+
+ExportFULL <- fread("ExportFULL.csv", colClasses = c(HS8_Code = "character"))
+ImportFULL <- fread("ImportFULL.csv", colClasses = c(HS10_Code = "character"))
+
+toc()
+```
+
+```{r Clean_ImportFULL}
+
+tic()
+
+# Extract the first 8 characters as HS8 for Imports
+ImportFULL_HS8 <- ImportFULL %>%
+  mutate(
+    HS8_Code = substr(HS10_Code, 1, 8))       
+
+# Remove HS10_Code
+ImportFULL_HS8 <- ImportFULL_HS8[, -c(1)]
+
+# Group by HS8_Code
+ImportFULL_HS8 <- ImportFULL_HS8 %>% 
+  group_by(HS8_Code, 
+           Date, 
+           Country, 
+           Province, 
+           State, 
+           UOM) %>% 
+  summarise(Value = sum(Value),
+            Quantity = sum(Quantity))
+
+
+# Format as Date
+
+ImportFULL_HS8$Date <- as.Date(ImportFULL_HS8$Date)
+ExportFULL$Date <- as.Date(ExportFULL$Date)
+
+toc()
+```
+
+```{r Join_TradeFULL}
+
+tic()
+
+TradeFULL <- full_join(ExportFULL, ImportFULL_HS8,
+                       by = c("HS8_Code",
+                              "Date",
+                              "Country",
+                              "Province",
+                              "State",
+                              "UOM"),
+                       copy = FALSE,
+                       suffix = c("_X","_M"),
+                       keep = NULL)
+
+#replace NAs with 0
+
+TradeFULL[is.na(TradeFULL)] <- 0
+
+# calculate trade balance
+
+TradeFULL$Value_Balance <- TradeFULL$Value_X-TradeFULL$Value_M
+
+TradeFULL$Quantity_Balance <- TradeFULL$Quantity_X-TradeFULL$Quantity_M
+
+# Re-arrange the columns in a useful order
+TradeFULL <- TradeFULL[,c(1:5,8,6:7,9:12)]
+
+
+TradeFULL <- pivot_longer(TradeFULL,
+                          7:12,
+                          names_to = "Estimate",
+                          values_to = "Value")
+
+toc()
+```
+
+```{r write_TradeFULL}
+
+tic()
+
+setwd("//sfp.idir.bcgov/S104/S04004/Statistics and Research/Raw Data and Information/Federal Government Sources/Canadian International Merchandise Trade")
+
+
+fwrite(TradeFULL, "TradeFULL.csv",
+       row.names = FALSE,
+       col.names = TRUE,
+       buffMB = 10)
+
+toc()
+```

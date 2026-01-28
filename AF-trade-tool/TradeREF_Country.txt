@@ -1,0 +1,9 @@
+let
+    Source = Csv.Document(Web.Contents("https://bcgov.sharepoint.com/sites/AF-SICI/Raw%20Data/ODPF_6_CtyDesc.TXT"),null,{0, 3, 11, 18, 25, 108, 191, 203},ExtraValues.Ignore,1252),
+    #"Changed Type" = Table.TransformColumnTypes(Source,{{"Column1", type text}, {"Column2", Int64.Type}, {"Column3", Int64.Type}, {"Column4", Int64.Type}, {"Column5", type text}, {"Column6", type text}, {"Column7", type text}, {"Column8", Int64.Type}}),
+    #"Renamed Columns" = Table.RenameColumns(#"Changed Type",{{"Column1", "Country_Code"}, {"Column5", "Country_Description"}}),
+    #"Removed Columns" = Table.RemoveColumns(#"Renamed Columns",{"Column6", "Column7", "Column8", "Column2", "Column3", "Column4"}),
+    #"Removed Duplicates" = Table.Distinct(#"Removed Columns", {"Country_Code"}),
+    #"Renamed Columns1" = Table.RenameColumns(#"Removed Duplicates",{{"Country_Description", "Country"}})
+in
+    #"Renamed Columns1"

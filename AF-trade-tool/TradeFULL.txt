@@ -1,0 +1,10 @@
+let
+    Source = Csv.Document(Web.Contents("https://bcgov.sharepoint.com/sites/AF-SICI/Raw%20Data/TradeFULL.csv"),[Delimiter=",", Columns=8, Encoding=1252, QuoteStyle=QuoteStyle.None]),
+    #"Promoted Headers" = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"Date", type date}, {"Value", Int64.Type}}),
+    #"Filtered Rows" = Table.SelectRows(#"Changed Type", each ([Estimate] = "Value_Balance" or [Estimate] = "Value_M" or [Estimate] = "Value_X")),
+    #"Replaced Value" = Table.ReplaceValue(#"Filtered Rows","Value_X","Export Value ($)",Replacer.ReplaceText,{"Estimate"}),
+    #"Replaced Value1" = Table.ReplaceValue(#"Replaced Value","Value_M","Import Value ($)",Replacer.ReplaceText,{"Estimate"}),
+    #"Replaced Value2" = Table.ReplaceValue(#"Replaced Value1","Value_Balance","Trade Balance ($)",Replacer.ReplaceText,{"Estimate"})
+in
+    #"Replaced Value2"

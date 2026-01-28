@@ -1,0 +1,16 @@
+10 NF      196601 200111 Newfoundland                                                                       Terre-Neuve                                                                        ODPFN023_8  202412
+10 NF      200112 200210 Newfoundland and Labrador                                                          Terre-Neuve et le Labrador                                                         ODPFN023_8  202412
+10 NL      200211 999912 Newfoundland and Labrador                                                          Terre-Neuve-et-Labrador                                                            ODPFN023_8  202412
+11 PE      196601 999912 Prince Edward Island                                                               Île-du-Prince-Édouard                                                              ODPFN023_8  202412
+12 NS      196601 999912 Nova Scotia                                                                        Nouvelle-Écosse                                                                    ODPFN023_8  202412
+13 NB      196601 999912 New Brunswick                                                                      Nouveau-Brunswick                                                                  ODPFN023_8  202412
+24 QC      196601 999912 Quebec                                                                             Québec                                                                             ODPFN023_8  202412
+35 ON      196601 999912 Ontario                                                                            Ontario                                                                            ODPFN023_8  202412
+46 MB      196601 999912 Manitoba                                                                           Manitoba                                                                           ODPFN023_8  202412
+47 SK      196601 999912 Saskatchewan                                                                       Saskatchewan                                                                       ODPFN023_8  202412
+48 AB      196601 999912 Alberta                                                                            Alberta                                                                            ODPFN023_8  202412
+59 BC      196601 999912 British Columbia                                                                   Colombie-Britannique                                                               ODPFN023_8  202412
+60 YT      196601 999912 Yukon                                                                              Yukon                                                                              ODPFN023_8  202412
+61 NT      196601 199903 Northwest Territories                                                              Territoires du Nord-ouest                                                          ODPFN023_8  202412
+61 NT      199904 999912 Northwest Territories                                                              Territoires du Nord-ouest                                                          ODPFN023_8  202412
+62 NU      199904 999912 Nunavut                                                                            Nunavut                                                                            ODPFN023_8  202412

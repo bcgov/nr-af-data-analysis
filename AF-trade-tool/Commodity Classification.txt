@@ -1,0 +1,13 @@
+let
+    Source = Csv.Document(Web.Contents("https://bcgov.sharepoint.com/sites/AF-SICI/Raw%20Data/Commodity_Classification.csv"),[Delimiter=",", Columns=18, Encoding=65001, QuoteStyle=QuoteStyle.None]),
+    #"Promoted Headers" = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),
+    #"Removed Columns" = Table.RemoveColumns(#"Promoted Headers",{"", "_1", "_2", "_3", "_4", "_5", "_6"}),
+    #"Inserted First Characters" = Table.AddColumn(#"Removed Columns", "HS8_Code", each Text.Start([HS8], 8), type text),
+    #"Merged Queries" = Table.NestedJoin(#"Inserted First Characters", {"NAICS5_Code"}, #"NAICS Structure", {"Code"}, "NAICS Structure", JoinKind.LeftOuter),
+    #"Expanded NAICS Structure" = Table.ExpandTableColumn(#"Merged Queries", "NAICS Structure", {"NAICS"}, {"NAICS5"}),
+    #"Merged Queries1" = Table.NestedJoin(#"Expanded NAICS Structure", {"NAICS4_Code"}, #"NAICS Structure", {"Code"}, "NAICS Structure", JoinKind.LeftOuter),
+    #"Expanded NAICS Structure1" = Table.ExpandTableColumn(#"Merged Queries1", "NAICS Structure", {"NAICS"}, {"NAICS4"}),
+    #"Merged Queries2" = Table.NestedJoin(#"Expanded NAICS Structure1", {"NAICS3_Code"}, #"NAICS Structure", {"Code"}, "NAICS Structure", JoinKind.LeftOuter),
+    #"Expanded NAICS Structure2" = Table.ExpandTableColumn(#"Merged Queries2", "NAICS Structure", {"NAICS"}, {"NAICS3"})
+in
+    #"Expanded NAICS Structure2"
