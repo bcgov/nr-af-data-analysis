@@ -529,7 +529,6 @@ they can be easily identified. Using [if/then?]
 
 ```{r 3d Adding red font style on imputed and interpolated cells}
 
-
 #  Describe step
 NAICS3and4_with_custom$FontColour <- "#234075"
 
