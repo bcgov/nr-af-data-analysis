@@ -494,7 +494,7 @@ wide312 <- dcast(
 wide312[, `:=`(
   val_norm312  = fifelse(is.na(`312`), 0, `312`)
               - fifelse(is.na(`3121`), 0, `3121`),
-  NAICS_Code = "3119",
+  NAICS_Code = "3129",
   NAICS      = "3129 Other beverage and tobacco product manufacturing"
 )]
 
