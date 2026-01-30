@@ -423,7 +423,7 @@ tic()
 # Set the working directory to the location of the CSV file
 setwd("C:/Users/lebautis/Government of BC/SICI Data Library Subsite - Unpublished Data")
 
-fwrite(CombinedTradeData, "TradeFULL_Updated.csv",
+fwrite(CombinedTradeData, "TradeFULLcsv",
        row.names = FALSE,
        col.names = TRUE,
        buffMB = 10)
