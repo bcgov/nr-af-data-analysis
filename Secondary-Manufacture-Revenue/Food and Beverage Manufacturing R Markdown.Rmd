@@ -67,7 +67,7 @@ dt <- as.data.table(get_cansim("16-10-0117-01"))
 # str(dt)
 
 # Optional: Show first few rows
-# dt[1:6]
+# dt[1:6] 
 ```
 
 # 2. Data Cleaning
@@ -158,7 +158,8 @@ FoodBev_Manu <- FoodBev_Manu[
 ]
 ```
 
-# 3. Addressing data suppression: , and row-level residuals
+# 3. Addressing data suppression:
+# imputation, interpolation, and row-level residuals
 
 This section fills in missing values that Statistics Canada suppresses
 for confidentiality.
@@ -244,6 +245,14 @@ NAICS4 <- subset(NAICS4, select = -UOM.5)
 # Rename UOM.4 to UOM
 NAICS4 <- NAICS4 %>% rename(UOM = UOM.4)
 
+# Rename NAICS labels for consistency
+NAICS4$NAICS[
+  which(NAICS4$NAICS_Code == "3111")] <- "3111 Animal food Manufacturing"
+NAICS4$NAICS[
+  which(NAICS4$NAICS_Code == "3117")] <- "3117 Seafood product preparation and packaging"
+NAICS4$NAICS[
+  which(NAICS4$NAICS_Code == "3123")] <- "3123 Cannabis product manufacturing"
+
 # Appending NAICS 4 to 3
 # Copy original table
 NAICS3 <- copy(FoodBev_Manu)
@@ -255,7 +264,7 @@ NAICS3 <- NAICS3[
 # Copy original table
 NAICS4_to3 <- copy(NAICS4)
 
-# Filter rows where NAICS starts with "311 " or "312 "
+# Filter rows where NAICS starts with "311 " or "312"
 NAICS4_to3 <- NAICS4_to3[
    grepl("^\\d{4}$", NAICS_Code)]
 
@@ -286,18 +295,21 @@ NAICS3[, c("val_norm.3", "val_norm.4") := NULL]
 
 # Replace 0 with NA in val_norm
 NAICS3[, val_norm := fifelse(val_norm == 0, NA_real_, val_norm)]
+
 ```
 
-3b. Time series interpolation: the script aggregates 4‑digit industries
-into 3‑digit totals and uses time-series interpolation only for British
-Columbia where consecutive years of data are suppressed but values exist
-on either side.
+3b. Time series interpolation: This method estimates missing values
+based on trends in the available data where up to 2 years of data in the
+same category are suppressed but values exist before and after.
 
 ```{r 3b Time series interpolation}
+
 # Linear interpolation is used to address missing values that cannot be imputed
-# across NAICS levels. The following code creates the column `value_interp`, 
-# which duplicates `val_norm` and estimates missing values for up to 2 years of 
-# consecutive missing data in each category. Starting with NAICS 3-digit:
+# hierarchically across NAICS levels. The following code creates the column 
+# `value_interp`, which duplicates `val_norm` and estimates missing values for
+# up to 2 years of consecutive missing data in each category. 
+
+#Starting with NAICS 3-digit:
 NAICS3 <- NAICS3 %>%
   group_by(GEO, NAICS_Code, Principal.statistics) %>%
   arrange(REF_DATE, .by_group = TRUE) %>%
@@ -305,7 +317,7 @@ NAICS3 <- NAICS3 %>%
                                      , maxgap = 2)) %>%
   ungroup()
 
-# Repeats the same procedure for NAICS 4-digit 
+# Repeat the same procedure for NAICS 4-digit:
 NAICS4 <- NAICS4 %>%
   group_by(GEO, NAICS_Code, Principal.statistics) %>%
   arrange(REF_DATE, .by_group = TRUE) %>%
@@ -314,24 +326,23 @@ NAICS4 <- NAICS4 %>%
   ungroup()
 ```
 
-3c. Residuals are calculated by subtracting known sub‑industry totals
-from their parent category, allowing the model to calculate and display
-an “other” industry row (one for food, one for beverages, tobacco and
-cannabis) that replaces suppressed rows and ensures that the sum of
-sub-totals matches the total.
+3c. NAICS-3 digit residual columns are calculated by subtracting known
+sub‑industry totals from their parent category, allowing the model to
+calculate and display “Other” industry rows at NAICS 3-digit level (one
+for food, one for beverages, tobacco and cannabis). This method replaces
+categories labeled as "Other" in the original data or those where data
+suppression is a significant issue. This method also ensures that the
+sum of the values at NAICS-4 matches the total for NAICS -3 digit level.
 
 ```{r 3c Residual calculation}
 
-# Combine NAICS levels 3 and 4 in the same object 
-NAICS3and4 <- rbind(NAICS3, NAICS4)
+# Combine NAICS levels 3 and 4 in the same object for easier processing
+NAICS3and4 <- data.table::rbindlist(list(NAICS3, NAICS4), fill = TRUE)
 
 # Define set of NAICS codes used to assemble 3119 (residual, other food manuf.): 
 # All except 3119 (Other food manuf.)
 naics_set311 <- c("311", "3111", "3112", "3113", "3114"
                   , "3115", "3116", "3117", "3118")
-
-# Combine NAICS levels 3 and 4 in the same object for easier processing
-NAICS3and4 <- data.table::rbindlist(list(NAICS3, NAICS4), fill = TRUE)
 
 # Define set of NAICS codes to recalculate 3119 (residual, other food manuf.): 
 # All except 3119 (Other food manuf.)
@@ -419,12 +430,6 @@ NAICS3and4 <- rbindlist(list(NAICS3and4, diff_rows_NAICS3and4)
 
 setorder(NAICS3and4, REF_DATE, GEO, Principal.statistics, NAICS_Code)
 
-# Rename NAICS labels for consistency
-NAICS3and4$NAICS[
-  which(NAICS3and4$NAICS_Code == "3111")] <- "3111 Animal food Manufacturing"
-NAICS3and4$NAICS[
-  which(NAICS3and4$NAICS_Code == "3117")] <- "3117 Seafood product preparation and packaging"
-
 ```
 
 3d. Identify imputed or interpolated data
@@ -436,9 +441,6 @@ value was imputed or interpolated, the font colour becomes red.
 
 ```{r 3d Adding red font style on imputed and interpolated cells}
 
-#  Describe step
-NAICS3and4$FontColour <- "#234075"
-
 # Create function to check if a value is positive numeric and not NA
 is_pos <- function(x) {
   is.numeric(x) & !is.na(x) & x > 0}
@@ -449,7 +451,6 @@ NAICS3and4$FontColour <- ifelse(is.na(NAICS3and4$val_norm)
                                         & is_pos(NAICS3and4$val_interp)
                                         , "Red", "#234075"
                                 )
-
 ```
 
 # 4. Export and save the output (.csv) in the Data Library
@@ -474,7 +475,8 @@ sharepoint_path <-
 # Create a named list of data frames and file names
 dfs <- list(
   "FoodBevManu_NAICS4.csv" = NAICS4,
-  "FoodBevManu_NAICS3.csv" = NAICS3
+  "FoodBevManu_NAICS3.csv" = NAICS3,
+  "FoodBevManu_NAICS3and4.csv" = NAICS3and4
 )
 
 # Loop through and write each CSV file to the Data Library (Unpublished)
