@@ -40,8 +40,9 @@ retrieved, the script provides a brief preview of what the data looks
 like, helping the user confirm that the correct file has been imported
 before moving on.
 
-The code below will install and activate the required packages for data 
-manipulation in this code. Use ??package.name for each one to access help.
+The code below will install and activate the required packages for data
+manipulation in this code. Use ??package.name for each one to access
+help.
 
 ```{r load data}
 
@@ -157,7 +158,7 @@ FoodBev_Manu <- FoodBev_Manu[
 ]
 ```
 
-# 3. Addressing data suppression: ,  and row-level residuals
+# 3. Addressing data suppression: , and row-level residuals
 
 This section fills in missing values that Statistics Canada suppresses
 for confidentiality.
@@ -428,15 +429,15 @@ NAICS3and4$NAICS[
 
 3d. Identify imputed or interpolated data
 
-The script also tags all imputed or interpolated cells in red font so they can 
-be easily identified. Using [if/then] logic, it checks each row for missing 
-values that were filled in during the previous steps. If a value was imputed or 
-interpolated, the font colour becomes red.
+The script also tags all imputed or interpolated cells in red font so
+they can be easily identified. Using [if/then] logic, it checks each row
+for missing values that were filled in during the previous steps. If a
+value was imputed or interpolated, the font colour becomes red.
 
 ```{r 3d Adding red font style on imputed and interpolated cells}
 
 #  Describe step
-NAICS3and4_with_custom$FontColour <- "#234075"
+NAICS3and4$FontColour <- "#234075"
 
 # Create function to check if a value is positive numeric and not NA
 is_pos <- function(x) {
