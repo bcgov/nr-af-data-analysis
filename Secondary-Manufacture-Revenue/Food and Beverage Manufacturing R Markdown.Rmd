@@ -1,7 +1,7 @@
 ---
 title: "16-10-0117-01 Principal statistics for manufacturing by NAICS"
 author: "Leila Bautista and Andre Bastos"
-date: "2026-02-04"
+date: "2026-02-06"
 output:
   pdf_document: default
   html_document: default
@@ -245,6 +245,33 @@ NAICS4 <- subset(NAICS4, select = -UOM.5)
 # Rename UOM.4 to UOM
 NAICS4 <- NAICS4 %>% rename(UOM = UOM.4)
 
+# There are a couple of cell in the dataset that need to be manually set to NA 
+# after inspection because the data suppression followed an atypical pattern,
+# causing only one of the NAICS 5-digit (Distilleries) categories to be 
+# reported, resulting in positive but extremely downward biased value in the 
+# hierarchical imputation. They will be estimated via time series interpolation 
+# in the next step.
+NAICS4$val_norm[
+  which(NAICS4$NAICS_Code == "3121" 
+        & NAICS4$REF_DATE == "2022" 
+        & NAICS4$Principal.statistics == "Revenue from goods manufactured"
+        & NAICS4$GEO == "British Columbia"
+        )] <- NA_real_
+
+NAICS4$val_norm[
+  which(NAICS4$NAICS_Code == "3121" 
+        & NAICS4$REF_DATE == "2016" 
+        & NAICS4$Principal.statistics == "Revenue from goods manufactured"
+        & NAICS4$GEO == "British Columbia"
+        )] <-  NA_real_
+
+NAICS4$val_norm[
+  which(NAICS4$NAICS_Code == "3121" 
+        & NAICS4$REF_DATE == "2017" 
+        & NAICS4$Principal.statistics == "Revenue from goods manufactured"
+        & NAICS4$GEO == "British Columbia"
+        )] <-  NA_real_
+
 # Rename NAICS labels for consistency
 NAICS4$NAICS[
   which(NAICS4$NAICS_Code == "3111")] <- "3111 Animal food Manufacturing"
@@ -296,6 +323,17 @@ NAICS3[, c("val_norm.3", "val_norm.4") := NULL]
 # Replace 0 with NA in val_norm
 NAICS3[, val_norm := fifelse(val_norm == 0, NA_real_, val_norm)]
 
+# Imputation of a single value for the last year (2024) of the 312 (Beverage
+# and tobacco product manufacturing) category in B.C. using the same percentage
+# year-over-year 2023-2024 as the 3121 (Beverage manufacturing) category in B.C.
+# for the same year
+NAICS3$val_norm[
+  which(NAICS3$NAICS_Code == "312" 
+        & NAICS3$REF_DATE == "2024" 
+        & NAICS3$Principal.statistics == "Revenue from goods manufactured"
+        & NAICS3$GEO == "British Columbia"
+        )] <- 2952935600.48
+
 ```
 
 3b. Time series interpolation: This method estimates missing values
@@ -335,6 +373,19 @@ suppression is a significant issue. This method also ensures that the
 sum of the values at NAICS-4 matches the total for NAICS -3 digit level.
 
 ```{r 3c Residual calculation}
+
+# Adjustment of a value in the year 2017 to prevent the value of the 3-digit
+# NAICS [312] from being lower than that of the 4-digit NAICS [3121]
+NAICS4$val_interp[
+  which(NAICS4$NAICS_Code == "3121" 
+        & NAICS4$REF_DATE == "2017" 
+        & NAICS4$Principal.statistics == "Revenue from goods manufactured"
+        & NAICS4$GEO == "British Columbia"
+        )] <-  NAICS3$val_interp[which(NAICS3$NAICS_Code == "312" 
+            & NAICS3$REF_DATE == "2017" 
+            & NAICS3$Principal.statistics == "Revenue from goods manufactured"
+            & NAICS3$GEO == "British Columbia"
+            )]
 
 # Combine NAICS levels 3 and 4 in the same object for easier processing
 NAICS3and4 <- data.table::rbindlist(list(NAICS3, NAICS4), fill = TRUE)
@@ -422,13 +473,12 @@ diff_rows_NAICS3and4 <- full_join(wide311, wide312, by = c("REF_DATE", "GEO"
                           , "NAICS", "val_interp"))
 
 # Drop unused NAICS codes after the residual calculation
-NAICS3and4 <- NAICS3and4[ !NAICS3and4$NAICS_Code %in% c("3122", "3123"), ]
+NAICS3and4 <- NAICS3and4[ !NAICS3and4$NAICS_Code %in% c("3119", "3122", "3123"), ]
 
 # Append calculated rows (residuals) and rename labels
 NAICS3and4 <- rbindlist(list(NAICS3and4, diff_rows_NAICS3and4)
                                     , use.names = TRUE, fill = TRUE)
 
-setorder(NAICS3and4, REF_DATE, GEO, Principal.statistics, NAICS_Code)
 
 ```
 
@@ -483,5 +533,3 @@ dfs <- list(
 for (fname in names(dfs)) {
   fwrite(dfs[[fname]], file.path(sharepoint_path, fname))
 }
-
-```
