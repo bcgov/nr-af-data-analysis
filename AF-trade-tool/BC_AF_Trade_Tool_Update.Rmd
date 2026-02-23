@@ -190,6 +190,10 @@ Export_Update <- read.csv(file = "ODPFN016_202412N.csv", stringsAsFactors = FALS
 
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+# Rename variables then join left with the Commodity_REF to filter for relevant HS codes only and merge with Commodity_REF to filter for agrifood HS8 codes
+>>>>>>> Stashed changes
 =======
 # Rename variables then join left with the Commodity_REF to filter for relevant HS codes only and merge with Commodity_REF to filter for agrifood HS8 codes
 >>>>>>> Stashed changes
@@ -304,6 +308,9 @@ Import_Update <- read.csv(
 unlink(temp_file)
 
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
@@ -327,8 +334,11 @@ Import_Update$State[is.na(Import_Update$State) | Import_Update$State == ""] <- "
 
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 # Transform HS10 to HS8 by summing Value and Quantity then join left with the Commodity_REF to fileter for relevant HS codes only
 =======
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
 # Trim first 8 characters 
@@ -347,9 +357,12 @@ Import_Update <- Import_Update %>%
 
 <<<<<<< Updated upstream
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 # to write code: bind with Trade FULL
 Import_Update <- Import_Update %>% merge(Commodity_REF,by="HS8_code")
 =======
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
 # Load the list of agriculture, seafood and food manufacturing HS codes 
@@ -363,6 +376,9 @@ DomExport_Update <- DomExport_Update %>%
   select(1:8)
 
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
