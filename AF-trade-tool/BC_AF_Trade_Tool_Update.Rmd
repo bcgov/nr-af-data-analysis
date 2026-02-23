@@ -189,6 +189,10 @@ Commodity_REF <- fread("Commodity_Classification.csv",
 Export_Update <- read.csv(file = "ODPFN016_202412N.csv", stringsAsFactors = FALSE, colClasses = c(HS8 = "character", Value = "numeric", Quantity = "numeric"))
 
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+# Rename variables then join left with the Commodity_REF to filter for relevant HS codes only and merge with Commodity_REF to filter for agrifood HS8 codes
+>>>>>>> Stashed changes
 =======
 # Rename variables then join left with the Commodity_REF to filter for relevant HS codes only and merge with Commodity_REF to filter for agrifood HS8 codes
 >>>>>>> Stashed changes
@@ -299,6 +303,9 @@ Import_Update <- read.csv(
 # Remove the temp file using unlink()
 unlink(temp_file)
 
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 # Rename variables
 Import_Update <- Import_Update %>% 
@@ -319,8 +326,11 @@ Import_Update$Date <- ym(Import_Update$Date)
 Import_Update$State[is.na(Import_Update$State) | Import_Update$State == ""] <- "Country"
 
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 # Transform HS10 to HS8 by summing Value and Quantity then join left with the Commodity_REF to fileter for relevant HS codes only
 =======
+=======
+>>>>>>> Stashed changes
 # Trim first 8 characters 
 >>>>>>> Stashed changes
 Import_Update <- Import_Update %>%
@@ -336,9 +346,12 @@ Import_Update <- Import_Update %>%
     .groups = "drop")
 
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 # to write code: bind with Trade FULL
 Import_Update <- Import_Update %>% merge(Commodity_REF,by="HS8_code")
 =======
+=======
+>>>>>>> Stashed changes
 # Load the list of agriculture, seafood and food manufacturing HS codes 
 Commodity_REF <- fread("Commodity_Classification.csv",
                        colClasses = c(HS8_Code = "character"))
@@ -349,6 +362,9 @@ DomExport_Update <- DomExport_Update %>%
   merge(Commodity_REF,by="HS8_code") %>% 
   select(1:8)
 
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 
 toc()
