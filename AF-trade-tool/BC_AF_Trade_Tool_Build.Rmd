@@ -1,5 +1,5 @@
 ---
-title: "CIMTD"
+title: "BC AF Trade Tool Build"
 author: "Leila Bautista and Brendan Dwyer"
 date: "`r Sys.Date()`"
 output:
@@ -7,20 +7,39 @@ output:
   pdf_document: default
 ---
 
-# Canadian International Merchandise Trade Database (CIMTD)
+# BC AF Trade Tool Build
 
-This RMarkdown provides chunks of R code to load, filter and combine data from Open Government [website](https://search.open.canada.ca/opendata/?sort=metadata_modified+desc&search_text=cimt&page=1). The trade data is used by the Ministry of Agriculture and Food's Sector Insights and Corporate Initiatives (SICI) Unit to produce annual Sector Tables, Trade Dashboards and other information products.
+This RMarkdown provides chunks of R code to load, filter and combine data from Open Government [website](https://search.open.canada.ca/opendata/?sort=metadata_modified+desc&search_text=cimt&page=1). The trade data is used by the Ministry of Agriculture and Food's SITS Unit to produce various deliverables that estimate BC and other provincial trade of agriculture and food commodities.
 
-Contact [alstats\@gov.bc.ca](mailto:alstats@gov.bc.ca) for any questions.
+Contact [alstats\@gov.bc.ca](mailto:alstats@gov.bc.ca) for any questions. The following are key steps:
 
-# Set-up & Library
+1.  Set-up and load library
+
+2.  Loop through 2003-2023 to load and read data on:
+
+    a\. domestic export\*
+
+    b\. import
+
+3.  Calculate trade balance
+
+4.  Append all years into the time series data called [**TradeFull.csv**]{.underline}
+
+\*A new chunk to load **c. Total export** could be written which would require binding with **a. Domestic export** to pivot wide by export type (i.e., total vs. domestic). Once pivoted wide, re-export is equal to total export less domestic export and can be calculated. After calculating re-export, optional to drop total export and pivot long to match **Trade_Update** and **Trade_Full** data frames' variables (i.e., columns) and types. Section **3. Calculate the trade balance** will need to be updated to allow for the distinction between domestic, re-export or total-export. Additional work on the **BC_AF_Trade_Tool_Update.Rmd** will also need to be undertaken.
+
+# 1. Set-up & Library
+
+As of January 2026, SITS cannot yet directly connect to a SharePoint URL to access the shared Unpublished Data library. The interim workaround is to sync that library to the user's Desktop and change the URL manually. Remember to replace "\\" with "/" and note that the timeout settings is 10 mins because the zip file is large and the default timeout of 1 min is insufficient to download and unzip the file.
 
 ```{r Set-up, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
 # Set working directory
 
-knitr::opts_knit$set(root.dir = "//sfp.idir.bcgov/S104/S04004/Statistics and Research/Raw Data and Information/Federal Government Sources/Canadian International Merchandise Trade/Annual")
+knitr::opts_knit$set(root.dir = "C:/Users/lebautis/Government of BC/SICI Data Library Subsite - Unpublished Data")
+
+# sets the time-out option to 10 mins
+options(timeout = 600)
 ```
 
 ```{r Library}
@@ -36,68 +55,55 @@ p_load(dplyr,
        stringr)
 ```
 
-# Load and read latest data
+# 2. Loop from 2003-2023 to load and read data
 
-```{r Export Latest}
-tic()
+As of January 2026, there are 2 chunks of code involved to load the update for each of:
 
-# Step 1: Create a temporary file
-temp_file <- tempfile()
+-   a\. Domestic export
 
-# Step 2: Fetch the online file using download.file()
-# Replace 'url_of_the_file' with the actual URL of the file you want to download
-url <- "https://www150.statcan.gc.ca/n1/pub/71-607-x/2021004/zip/CIMT-CICM_Dom_Exp_2024.zip"
-download.file(url, temp_file)
+-   b\. Import
 
-# Step 3: Extract the file from the temp file using unz() command
-# Replace 'file_inside_zip' with the actual name of the file inside the ZIP archive
-file_inside_zip <- "CIMT-CICM_Dom_Exp_2024/ODPFN016_202405N.csv"
-Export <- read.csv(unz(temp_file, file_inside_zip))
+See the top of this .Rmd for more information on total and re-export integration.
 
-# Step 4: Remove the temp file using unlink()
-unlink(temp_file)
+## 2a. Domestic Export Historic
 
-# Load the list of agriculture, seafood and food manufacturing HS codes 
-Commodity_REF <- fread("//sfp.idir.bcgov/S104/S04004/Statistics and Research/Raw Data and Information/Federal Government Sources/Canadian International Merchandise Trade/HS8X 2022 AAFC REF.csv",
-                       colClasses = c(HS8_Code = "character"))
+This chunk of code works off the user's desktop and the directory will need to be updated with their IDIR:
 
-# Merge the file with the Commodity REF to fileter for agriculture, seafood and food manufacturing HS codes only
-Export2024 <- Export %>% 
-  rename (Date = `YearMonth.AnnéeMois`,
-          HS8_Code = `HS8`,
-          Coutnry = `Country.Pays`,
-          State = `State.État`,
-          Value = `Value.Valeur`,
-          Quantity = `Quantity.Quantité`,
-          UOM = `Unit.of.Measure.Unité.de.Mesure`
-  ) %>%
-  merge(Commodity_REF,by="HS8_Code") %>%
-  select(1:8)
-
-# reformat the date column
-Export2024$Date <- ym(Export2024$Date)
-
-# Set the working directory to the destination folder
-setwd("//sfp.idir.bcgov/S104/S04004/Statistics and Research/Raw Data and Information/Federal Government Sources/Canadian International Merchandise Trade/Annual")
-
-# Write the csv file 
-fwrite(Export2024, "Export2024.csv")  
-
-# to write code: bind with Trade FULL
-
-
-toc()
+```         
+"C:/Users/[replace with IDIR]/Desktop/"
 ```
 
-```{r Import Latest}
-# To be completed
+The URL for the .zip file changes and needs updating. Since 2017, it has been formatted like:
+
+```         
+https://www150.statcan.gc.ca/n1/pub/##-###-x/#######/zip/CIMT-CICM_Dom_Exp_YYYY.zip
 ```
 
-# Load and read 1988-2002 data
+From 2003 to 2016, the format of the .zip file was:
 
-This chunk is to download from the Open Government website. Only Import data from 1988-2002 needed to be down because the export data 1988-2023 was downloaded through a past version of this R script.
+Confirm that file_inside_zip is the correct one to pull from the zip_contents then update the references for [**out_dir**]{.underline} and [**file.path**]{.underline} with the latest year:
 
-```{r Import Historic}
+```         
+C:/Users/[replace with IDIR]/Desktop/CIMT_CICM_YYYY/CIMT-CICM_Dom_Exp_YYYY
+```
+
+Until BC Gov admins grant access, SharePoint files cannot easily be pulled using the **M365** R package. The temporary workaround is to sync the Unpublished Data Library with each user's desktop which needs to be updated in the code:
+
+```         
+"C:/Users/[replace with IDIR]/Government of BC/SICI Data Library Subsite - Unpublished Data"
+```
+
+When all of the above references have been updated, following chunk will:
+
+-   Download the zip file: load the specific file with export value data at the HS8-level into a full data frame called **DomExport_Update**.
+
+-   Clean the data: rename columns and specifying types (e.g., text, numeric, etc.)
+
+-   Filter the full data frame: load the specific list of HS8 codes from AAFC's CATSNET related to agriculture and food into a data framed called **Commodity_REF** and left join with the full data frame, **DomExport_Update,** to filter only for matching HS8 codes
+
+-   Remember to replace "\\" with "/"
+
+```{r Domestic Export Historic}
 
 tic()
 
