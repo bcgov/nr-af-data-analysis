@@ -33,7 +33,7 @@ knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_knit$set(root.dir = "C:/Users/lebautis/Government of BC/SICI Data Library Subsite - Unpublished Data")
 
 # sets the time-out option to 10 mins
-options(timeout = 600)
+options(timeout = 800)
 ```
 
 ```{r Library}
@@ -85,7 +85,7 @@ Until BC Gov admins grant access, SharePoint files cannot easily be pulled using
 "C:/Users/[replace with IDIR]/Government of BC/SICI Data Library Subsite - Unpublished Data"
 ```
 
-When all of the above references have been updated, following chunk will:
+When all of the above references have been updated, view zip_contents and update the following chunk with the correct index to the file that starts with "ODPFN016\_"
 
 -   Download the zip file: load the specific file with export value data at the HS8-level into a full data frame called **DomExport_Update**.
 
@@ -95,13 +95,12 @@ When all of the above references have been updated, following chunk will:
 
 -   Remember to replace "\\" with "/"
 
-```{r Export Update}
+```{r Dom Export Update Part 1}
 
 # starts the timer (optional)
 tic()
 
-# Set the working directory to desktop and create a temporary file
-setwd("C:/Users/lebautis/Desktop/")
+# Create a temporary file
 temp_file <- tempfile()
 
 # Fetch the online file using download.file()
@@ -113,54 +112,30 @@ url <- "https://www150.statcan.gc.ca/n1/pub/71-607-x/2021004/zip/CIMT-CICM_Dom_E
 zip_file <- tempfile(fileext = ".zip")
 
 # Download the ZIP
-download.file(
-  url      = url,
-  destfile = zip_file,
-  mode     = "wb"   # important for Windows
-)
+
+download.file(url, zip_file, mode = "wb", method = "libcurl")
 
 # List the contents of the ZIP file
 zip_contents <- unzip(zip_file, list = TRUE)
 
-# Select the file in the 4th row, 1st column
-file_inside_zip <- zip_contents[12, 1]
+csv_file <- zip_contents$Name[
+  grepl("ODPFN016_.*\\.csv$", zip_contents$Name)
+]
 
-# Check what file was selected
-file_inside_zip
-
-# Extract specific file 
-out_dir <- "C:/Users/lebautis/Desktop/CIMT_CICM_2025"
-
-unzip(
-  zip_file,
-  files = file_inside_zip,
-  exdir = out_dir
-)
-
-# Full path to the extracted CSV file
-csv_file <- file.path("C:/Users/lebautis/Desktop/CIMT_CICM_2025/CIMT-CICM_Dom_Exp_2025", basename(file_inside_zip))
 
 # Read the CSV with specified column classes
-DomExport_Update <- read.csv(
-  csv_file,
-  colClasses = c(
-    HS8      = "character",
-    Value    = "numeric",
-    Quantity = "numeric"
-  ),
-  stringsAsFactors = FALSE
-)
-
+  DomExport_Update <- read.csv(
+     unz(zip_file, csv_file),
+    colClasses = c(
+      HS8      = "character",
+      Value.Valeur    = "numeric",
+      Quantity.Quantité = "numeric"
+    ),
+    stringsAsFactors = FALSE
+  )
+  
 # Remove the temp file using unlink()
-unlink(temp_file)
-
-
-# Set the working directory to SharePoint synced version on desktop
-setwd("C:/Users/lebautis/Government of BC/SICI Data Library Subsite - Unpublished Data")
-
-# Load the list of agriculture, seafood and food manufacturing HS codes 
-Commodity_REF <- fread("Commodity_Classification.csv",
-                       colClasses = c(HS8_Code = "character"))
+  unlink(temp_file)
 
 
 # Rename variables then join left with the Commodity_REF to filter for relevant HS codes only
@@ -173,13 +148,20 @@ DomExport_Update <- DomExport_Update %>%
           Value = `Value.Valeur`,
           Quantity = `Quantity.Quantité`,
           UOM = `Unit.of.Measure.Unité.de.Mesure`
-  ) %>%
-  merge(Commodity_REF,by="HS8_code") %>% 
+  ) %>% 
   select(1:8)
-
+  
 # reformat the date column
 DomExport_Update$Date <- ym(DomExport_Update$Date)
 
+# Load the list of agriculture, seafood and food manufacturing HS codes 
+Commodity_REF <- fread("C:/Users/lebautis/Government of BC/SICI Data Library Subsite - Unpublished Data/CATSNET HS8.csv",
+                       colClasses = c(HS8_code = "character"))
+
+
+DomExport_Update <- DomExport_Update %>% 
+  merge(Commodity_REF,by="HS8_code") %>%
+  rename(HS_description = HS8_description)
 
 # end timer and report
 toc()
@@ -211,7 +193,7 @@ Until BC Gov admins grant access, SharePoint files cannot easily be pulled using
 "C:/Users/[replace with IDIR]/Government of BC/SICI Data Library Subsite - Unpublished Data"
 ```
 
-Remember that import data is not available at the level 8 but rather 10 level. When all of the above references have been updated, following chunk will:
+Remember that import data is not available at the level 8 but rather 10 level. When all of the above references have been updated, view zip_contents and update the following chunk with the correct index to the file that starts with "ODPFN014"
 
 -   Download the zip file: load the specific file with export value data at the HS10-level into a full data frame called **Import_Update**
 
@@ -223,13 +205,12 @@ Remember that import data is not available at the level 8 but rather 10 level. W
 
 -   Remember to replace "\\" with "/"
 
-```{r Import Update}
+```{r Import Update Part 1}
 
 # starts the timer (optional)
 tic()
 
-# Set the working directory to desktop and create a temporary file
-setwd("C:/Users/lebautis/Desktop/")
+# Create a temporary file
 temp_file <- tempfile()
 
 # Fetch the online file using download.file()
@@ -241,87 +222,60 @@ url <- "https://www150.statcan.gc.ca/n1/pub/71-607-x/2021004/zip/CIMT-CICM_Imp_2
 zip_file <- tempfile(fileext = ".zip")
 
 # Download the ZIP
-download.file(
-  url      = url,
-  destfile = zip_file,
-  mode     = "wb"   # important for Windows
-)
+
+download.file(url, zip_file, mode = "wb", method = "libcurl")
 
 # List the contents of the ZIP file
 zip_contents <- unzip(zip_file, list = TRUE)
 
-# Select the file in the 4th row, 1st column
-file_inside_zip <- zip_contents[11, 1]
+csv_file <- zip_contents$Name[
+  grepl("ODPFN014_.*\\.csv$", zip_contents$Name)
+]
 
-# Check what file was selected
-file_inside_zip
-
-# Extract specific file 
-out_dir <- "C:/Users/lebautis/Desktop/CIMT_CICM_2025"
-
-unzip(
-  zip_file,
-  files = file_inside_zip,
-  exdir = out_dir
-)
-
-# Full path to the extracted CSV file
-csv_file <- file.path("C:/Users/lebautis/Desktop/CIMT_CICM_2025/CIMT-CICM_Imp_2025", basename(file_inside_zip))
 
 # Read the CSV with specified column classes
-Import_Update <- read.csv(
-  csv_file,
-  colClasses = c(
-    HS10      = "character",
-    Value    = "numeric",
-    Quantity = "numeric"
-  ),
-  stringsAsFactors = FALSE
-)
-
-# Remove the temp file using unlink()
-unlink(temp_file)
-
-# Set the working directory to SharePoint synced version on desktop
-setwd("C:/Users/lebautis/Government of BC/SICI Data Library Subsite - Unpublished Data")
-
-# Load the list of agriculture, seafood and food manufacturing HS codes 
-Commodity_REF <- read.csv("HS10M_2022_AAFC_REF.csv", colClasses = "character")
-
-# Rename variables
-Import_Update <- Import_Update %>% 
-  rename (Date = `YearMonth.AnnéeMois`,
-          HS10_code = `HS10`,
-          Country = `Country.Pays`,
-          State = `State.État`,
-          Value = `Value.Valeur`,
-          Quantity = `Quantity.Quantité`,
-          UOM = `Unit.of.Measure.Unité.de.Mesure`
-  ) %>%
-  select(1:8)
-
-# reformat the date column
+  Import_Update <- read.csv(
+     unz(zip_file, csv_file),
+    colClasses = c(
+      HS10      = "character",
+      Value.Valeur    = "numeric",
+      Quantity.Quantité = "numeric"
+    ),
+    stringsAsFactors = FALSE
+  )
+  
+  # Remove the temp file using unlink()
+  unlink(temp_file)
+  
+  
+  # Rename variables
+  Import_Update <- Import_Update %>% 
+    rename (Date = `YearMonth.AnnéeMois`,
+            HS10_code = `HS10`,
+            Country = `Country.Pays`,
+            State = `State.État`,
+            Value = `Value.Valeur`,
+            Quantity = `Quantity.Quantité`,
+            UOM = `Unit.of.Measure.Unité.de.Mesure`
+    ) %>%
+    select(1:8)
+  
+  # reformat the date column
 Import_Update$Date <- ym(Import_Update$Date)
 
 # Replace blank, NA, or NULL values in 'State' with 'Country'
 Import_Update$State[is.na(Import_Update$State) | Import_Update$State == ""] <- "Country"
 
+# Load the list of agriculture, seafood and food manufacturing HS codes 
+Commodity_REF <- fread("C:/Users/lebautis/Government of BC/SICI Data Library Subsite - Unpublished Data/CATSNET HS10.csv",
+                       colClasses = c(HS10_code = "character"))
+
+
 # Join left with the Commodity_REF to filter for relevant HS codes only
-Import_Update <- Import_Update %>% merge(Commodity_REF,by="HS10_code")
-
-# Trim first 8 characters 
-Import_Update <- Import_Update %>%
-  mutate(HS8_code = substr(HS10_code, 1, 8))
-  
-# Transform HS10 to HS8 by summing Value and Quantity
-Import_Update <- Import_Update %>%
-  select(-HS10_code) %>%  # Remove original HS10 column
-  group_by(Date, HS8_code, Country, State, Province, UOM) %>%
-  summarise(
-    Value = sum(Value, na.rm = TRUE),
-    Quantity = sum(Quantity, na.rm = TRUE),
-    .groups = "drop")
-
+Import_Update <- Import_Update %>% 
+  merge(Commodity_REF,by="HS10_code") %>%
+  rename(HS_description = HS10_description) %>%
+  select(-HS10_code)
 
 # end timer and report
 toc()
@@ -336,7 +290,7 @@ To calculate the trade balance, ensure that the updated export and import trade 
 
 # Full join Export_Update with Import_Update into Trade_Update
 Trade_Update <- full_join(DomExport_Update, Import_Update,
-                       by = c("HS8_code",
+                       by = c("HS_description",
                               "Date",
                               "Country",
                               "Province",
@@ -356,13 +310,20 @@ Trade_Update$Value_Balance <- Trade_Update$Value_X-Trade_Update$Value_M
 Trade_Update$Quantity_Balance <- Trade_Update$Quantity_X-Trade_Update$Quantity_M
 
 # Re-arrange the columns in a useful order
-Trade_Update <- Trade_Update[,c(1:5,8,6:7,9:12)]
+Trade_Update <- Trade_Update[,c(1,9,2:5,8,6:7,10:13)]
 
 # Pivot to the format for easy binding with TradeFull.csv
 Trade_Update <- pivot_longer(Trade_Update,
-                          7:12,
+                          8:13,
                           names_to = "Estimate",
                           values_to = "Value")
+
+# Treat HS8 as characters and drop the HS description
+
+Trade_Update <- Trade_Update %>%
+  mutate(HS8_code = as.character(HS8_code)) %>%
+  select(-HS_description) %>%
+  filter(!grepl("^Quantity_", as.character(Estimate)))
 
 ```
 
@@ -390,16 +351,19 @@ TradeFULL <- read.csv("TradeFULL.csv", stringsAsFactors = FALSE, colClasses = c(
 # Specify date as type
 TradeFULL$Date <- ymd(TradeFULL$Date)
 
-# Ensure both data frames have the same columns
-if(all(colnames(TradeFULL) == colnames(Trade_Update))) {
-  # Combine the two data frames row-wise
-  CombinedTradeData <- rbind(TradeFULL, Trade_Update)
-  # Print the combined data
-  print(CombinedTradeData)
-} else {
-  # If columns do not match, give an error message
-  print("The columns of the two data frames do not match.")
-}
+### ONLY RUN TO CLEAN 2024 ONWARDS
+TradeFULL <- TradeFULL %>%
+  mutate(Date = as.Date(Date)) %>%
+  filter(Date < as.Date("2024-01-01"))
+
+
+
+# Combine the two data frames row-wise
+CombinedTradeData <- rbindlist(
+  list(TradeFULL, Trade_Update),
+  use.names = TRUE,
+  fill = TRUE
+)
 
 # end timer and report
 toc()
