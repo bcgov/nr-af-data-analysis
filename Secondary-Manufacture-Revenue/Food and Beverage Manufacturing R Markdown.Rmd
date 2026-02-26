@@ -1,7 +1,7 @@
 ---
 title: "16-10-0117-01 Principal statistics for manufacturing by NAICS"
 author: "Leila Bautista and Andre Bastos"
-date: "2026-01-28"
+date: "2026-02-06"
 output:
   pdf_document: default
   html_document: default
@@ -40,10 +40,9 @@ retrieved, the script provides a brief preview of what the data looks
 like, helping the user confirm that the correct file has been imported
 before moving on.
 
-Ensure you have the following packages installed: - **cansim:** package
-that allows STC data to be pulled into the environment using API -
-**data.table:** enahnced version enabling high-performance data
-manipulation for datasets that take up about 1GB in RAM or higher
+The code below will install and activate the required packages for data
+manipulation in this code. Use ??package.name for each one to access
+help.
 
 ```{r load data}
 
@@ -52,7 +51,8 @@ packages <- c("cansim",
               "data.table", 
               "dplyr", 
               "tidyr", 
-              "stringr")
+              "stringr",
+              "zoo")
 lapply(packages, require, character.only = TRUE)
 
 # Load Statistics Canada table 16-10-0117-01
@@ -63,11 +63,11 @@ dt <- as.data.table(get_cansim("16-10-0117-01"))
 # Optional print
 # print(dt)
 
-# Compact display of the dataset structure
-str(dt)
+# Optional: Compact display of the dataset structure
+# str(dt)
 
-# Show first few rows
-dt[1:6]
+# Optional: Show first few rows
+# dt[1:6] 
 ```
 
 # 2. Data Cleaning
@@ -136,8 +136,10 @@ FoodBev_Manu <- FoodBev_Manu %>%
                                 , "Total expenses")
   )
 
+# Normalize 'NAICS' column to text
 FoodBev_Manu$NAICS <- as.character(FoodBev_Manu$NAICS)
 
+# Combine NAICS_Code and NAICS description into a single column
 FoodBev_Manu$NAICS <- paste(FoodBev_Manu$NAICS_Code, FoodBev_Manu$NAICS
                             , sep = " ")
 
@@ -156,7 +158,8 @@ FoodBev_Manu <- FoodBev_Manu[
 ]
 ```
 
-# 3. Addressing data suppression: ,  and row-level residuals
+# 3. Addressing data suppression:
+# imputation, interpolation, and row-level residuals
 
 This section fills in missing values that Statistics Canada suppresses
 for confidentiality.
@@ -242,6 +245,41 @@ NAICS4 <- subset(NAICS4, select = -UOM.5)
 # Rename UOM.4 to UOM
 NAICS4 <- NAICS4 %>% rename(UOM = UOM.4)
 
+# There are a couple of cell in the dataset that need to be manually set to NA 
+# after inspection because the data suppression followed an atypical pattern,
+# causing only one of the NAICS 5-digit (Distilleries) categories to be 
+# reported, resulting in positive but extremely downward biased value in the 
+# hierarchical imputation. They will be estimated via time series interpolation 
+# in the next step.
+NAICS4$val_norm[
+  which(NAICS4$NAICS_Code == "3121" 
+        & NAICS4$REF_DATE == "2022" 
+        & NAICS4$Principal.statistics == "Revenue from goods manufactured"
+        & NAICS4$GEO == "British Columbia"
+        )] <- NA_real_
+
+NAICS4$val_norm[
+  which(NAICS4$NAICS_Code == "3121" 
+        & NAICS4$REF_DATE == "2016" 
+        & NAICS4$Principal.statistics == "Revenue from goods manufactured"
+        & NAICS4$GEO == "British Columbia"
+        )] <-  NA_real_
+
+NAICS4$val_norm[
+  which(NAICS4$NAICS_Code == "3121" 
+        & NAICS4$REF_DATE == "2017" 
+        & NAICS4$Principal.statistics == "Revenue from goods manufactured"
+        & NAICS4$GEO == "British Columbia"
+        )] <-  NA_real_
+
+# Rename NAICS labels for consistency
+NAICS4$NAICS[
+  which(NAICS4$NAICS_Code == "3111")] <- "3111 Animal food Manufacturing"
+NAICS4$NAICS[
+  which(NAICS4$NAICS_Code == "3117")] <- "3117 Seafood product preparation and packaging"
+NAICS4$NAICS[
+  which(NAICS4$NAICS_Code == "3123")] <- "3123 Cannabis product manufacturing"
+
 # Appending NAICS 4 to 3
 # Copy original table
 NAICS3 <- copy(FoodBev_Manu)
@@ -253,7 +291,7 @@ NAICS3 <- NAICS3[
 # Copy original table
 NAICS4_to3 <- copy(NAICS4)
 
-# Filter rows where NAICS starts with "311 " or "312 "
+# Filter rows where NAICS starts with "311 " or "312"
 NAICS4_to3 <- NAICS4_to3[
    grepl("^\\d{4}$", NAICS_Code)]
 
@@ -284,167 +322,88 @@ NAICS3[, c("val_norm.3", "val_norm.4") := NULL]
 
 # Replace 0 with NA in val_norm
 NAICS3[, val_norm := fifelse(val_norm == 0, NA_real_, val_norm)]
+
+# Imputation of a single value for the last year (2024) of the 312 (Beverage
+# and tobacco product manufacturing) category in B.C. using the same percentage
+# year-over-year 2023-2024 as the 3121 (Beverage manufacturing) category in B.C.
+# for the same year
+NAICS3$val_norm[
+  which(NAICS3$NAICS_Code == "312" 
+        & NAICS3$REF_DATE == "2024" 
+        & NAICS3$Principal.statistics == "Revenue from goods manufactured"
+        & NAICS3$GEO == "British Columbia"
+        )] <- 2952935600.48
+
 ```
 
-3b. Time series interpolation: the script aggregates 4‑digit industries
-into 3‑digit totals and uses time-series interpolation only for British
-Columbia where consecutive years of data are suppressed but values exist
-on either side.
+3b. Time series interpolation: This method estimates missing values
+based on trends in the available data where up to 2 years of data in the
+same category are suppressed but values exist before and after.
 
 ```{r 3b Time series interpolation}
-## Interpolation to address issues that can't be imputed across NAICS levels
-## Maximum 2 years of missing data having actual data the year before and after
 
+# Linear interpolation is used to address missing values that cannot be imputed
+# hierarchically across NAICS levels. The following code creates the column 
+# `value_interp`, which duplicates `val_norm` and estimates missing values for
+# up to 2 years of consecutive missing data in each category. 
 
-# Describe steps
-NAICS3$val_norm[which(NAICS3$REF_DATE == "2022" 
-  & NAICS3$GEO == "British Columbia"  
-  & NAICS3$NAICS_Code == "312"
-  & NAICS3$Principal.statistics == "Revenue from goods manufactured")] <-
-      (NAICS3$val_norm[which(NAICS3$REF_DATE == "2021" 
-      & NAICS3$GEO == "British Columbia"  
-      & NAICS3$NAICS_Code == "312"
-      & NAICS3$Principal.statistics == "Revenue from goods manufactured")]) +
-      (((NAICS3$val_norm[which(NAICS3$REF_DATE == "2023" 
-      & NAICS3$GEO == "British Columbia"
-      & NAICS3$NAICS_Code == "312"
-      & NAICS3$Principal.statistics == "Revenue from goods manufactured")])
-      - (NAICS3$val_norm[which(NAICS3$REF_DATE == "2021" 
-      & NAICS3$GEO == "British Columbia"
-      & NAICS3$NAICS_Code == "312"
-      & NAICS3$Principal.statistics == "Revenue from goods manufactured")]))/2)
+#Starting with NAICS 3-digit:
+NAICS3 <- NAICS3 %>%
+  group_by(GEO, NAICS_Code, Principal.statistics) %>%
+  arrange(REF_DATE, .by_group = TRUE) %>%
+  mutate(val_interp = zoo::na.approx(val_norm, x = REF_DATE, na.rm = FALSE
+                                     , maxgap = 2)) %>%
+  ungroup()
 
-# Describe steps
-NAICS4$val_norm[which(NAICS4$REF_DATE == "2022" 
-  & NAICS4$GEO == "British Columbia"
-  & NAICS4$NAICS_Code == "3121"
-  & NAICS4$Principal.statistics == "Revenue from goods manufactured")] <- 
-      (NAICS4$val_norm[which(NAICS4$REF_DATE == "2021" 
-      & NAICS4$GEO == "British Columbia"
-      & NAICS4$NAICS_Code == "3121"
-      & NAICS4$Principal.statistics == "Revenue from goods manufactured")])+
-      (((NAICS4$val_norm[which(NAICS4$REF_DATE == "2023" 
-      & NAICS4$GEO == "British Columbia"
-      & NAICS4$NAICS_Code == "3121"
-      & NAICS4$Principal.statistics == "Revenue from goods manufactured")])
-      -(NAICS4$val_norm[which(NAICS4$REF_DATE == "2021" 
-      & NAICS4$GEO == "British Columbia"
-      & NAICS4$NAICS_Code == "3121"
-      & NAICS4$Principal.statistics == "Revenue from goods manufactured")]))/2)
-
-# Describe steps
-NAICS3$val_norm[which(NAICS3$REF_DATE == "2024" 
-  & NAICS3$GEO == "British Columbia"
-  & NAICS3$NAICS_Code == "312"
-  & NAICS3$Principal.statistics == "Revenue from goods manufactured")] <-
-      (NAICS4$val_norm[which(NAICS4$REF_DATE == "2024" 
-      & NAICS4$GEO == "British Columbia"
-      & NAICS4$NAICS_Code == "3121"
-      & NAICS4$Principal.statistics == "Revenue from goods manufactured")])/
-      ((NAICS4$val_norm[which(NAICS4$REF_DATE == "2023" 
-      & NAICS4$GEO == "British Columbia"
-      & NAICS4$NAICS_Code == "3121"
-      & NAICS4$Principal.statistics == "Revenue from goods manufactured")])/
-      (NAICS3$val_norm[which(NAICS3$REF_DATE == "2023" 
-      & NAICS3$GEO == "British Columbia"
-      & NAICS3$NAICS_Code == "312"
-      & NAICS3$Principal.statistics == "Revenue from goods manufactured")]))
-
-# Describe steps
-NAICS4$val_norm[which(NAICS4$REF_DATE == "2018" 
-  & NAICS4$GEO == "British Columbia"
-  & NAICS4$NAICS_Code == "3115"
-  & NAICS4$Principal.statistics == "Revenue from goods manufactured")] <-
-      (NAICS4$val_norm[which(NAICS4$REF_DATE == "2017" 
-      & NAICS4$GEO == "British Columbia"
-      & NAICS4$NAICS_Code == "3115"
-      & NAICS4$Principal.statistics == "Revenue from goods manufactured")])+
-      (((NAICS4$val_norm[which(NAICS4$REF_DATE == "2019" 
-      & NAICS4$GEO == "British Columbia"
-      & NAICS4$NAICS_Code == "3115"
-      & NAICS4$Principal.statistics == "Revenue from goods manufactured")])-
-      (NAICS4$val_norm[which(NAICS4$REF_DATE == "2017" 
-      & NAICS4$GEO == "British Columbia"
-      & NAICS4$NAICS_Code == "3115"
-      & NAICS4$Principal.statistics == "Revenue from goods manufactured")]))/2)
-
-# Describe steps
-NAICS4$val_norm[which(NAICS4$REF_DATE == "2018" 
-  & NAICS4$GEO == "British Columbia"
-  & NAICS4$NAICS_Code == "3117"
-  & NAICS4$Principal.statistics == "Revenue from goods manufactured")] <-
-      (NAICS4$val_norm[which(NAICS4$REF_DATE == "2017" 
-      & NAICS4$GEO == "British Columbia"
-      & NAICS4$NAICS_Code == "3117"
-      & NAICS4$Principal.statistics == "Revenue from goods manufactured")])+
-      (((NAICS4$val_norm[which(NAICS4$REF_DATE == "2019" 
-      & NAICS4$GEO == "British Columbia"
-      & NAICS4$NAICS_Code == "3117"
-      & NAICS4$Principal.statistics == "Revenue from goods manufactured")])-
-      (NAICS4$val_norm[which(NAICS4$REF_DATE == "2017" 
-      & NAICS4$GEO == "British Columbia"
-      & NAICS4$NAICS_Code == "3117"
-      & NAICS4$Principal.statistics == "Revenue from goods manufactured")]))/2)
-
-# Describe steps
-NAICS4$val_norm[which(NAICS4$REF_DATE == "2014" 
-  & NAICS4$GEO == "British Columbia"
-  & NAICS4$NAICS_Code == "3117"
-  & NAICS4$Principal.statistics == "Revenue from goods manufactured")] <-
-      (NAICS4$val_norm[which(NAICS4$REF_DATE == "2013" 
-      & NAICS4$GEO == "British Columbia"
-      & NAICS4$NAICS_Code == "3117"
-      & NAICS4$Principal.statistics == "Revenue from goods manufactured")])+
-      (((NAICS4$val_norm[which(NAICS4$REF_DATE == "2016" 
-      & NAICS4$GEO == "British Columbia"
-      & NAICS4$NAICS_Code == "3117"
-      & NAICS4$Principal.statistics == "Revenue from goods manufactured")])-
-      (NAICS4$val_norm[which(NAICS4$REF_DATE == "2013" 
-      & NAICS4$GEO == "British Columbia"
-      & NAICS4$NAICS_Code == "3117"
-      & NAICS4$Principal.statistics == "Revenue from goods manufactured")]))/3)
-
-# Describe steps
-NAICS4$val_norm[which(NAICS4$REF_DATE == "2015" 
-  & NAICS4$GEO == "British Columbia"
-  & NAICS4$NAICS_Code == "3117"
-  & NAICS4$Principal.statistics == "Revenue from goods manufactured")] <-
-      (NAICS4$val_norm[which(NAICS4$REF_DATE == "2013" 
-      & NAICS4$GEO == "British Columbia"
-      & NAICS4$NAICS_Code == "3117"
-      & NAICS4$Principal.statistics == "Revenue from goods manufactured")])+
-      2*(((NAICS4$val_norm[which(NAICS4$REF_DATE == "2016" 
-      & NAICS4$GEO == "British Columbia"
-      & NAICS4$NAICS_Code == "3117"
-      & NAICS4$Principal.statistics == "Revenue from goods manufactured")])-
-      (NAICS4$val_norm[which(NAICS4$REF_DATE == "2013" 
-      & NAICS4$GEO == "British Columbia"
-      & NAICS4$NAICS_Code == "3117"
-      & NAICS4$Principal.statistics == "Revenue from goods manufactured")]))/3)
+# Repeat the same procedure for NAICS 4-digit:
+NAICS4 <- NAICS4 %>%
+  group_by(GEO, NAICS_Code, Principal.statistics) %>%
+  arrange(REF_DATE, .by_group = TRUE) %>%
+  mutate(val_interp = zoo::na.approx(val_norm, x = REF_DATE, na.rm = FALSE
+                                     , maxgap = 2)) %>%
+  ungroup()
 ```
 
-3c. Residuals are calculated by subtracting known sub‑industry totals
-from their parent category, allowing the model to calculate and display
-an “other” industry row (one for food, one for beverages, tobacco and
-cannabis) that replaces suppressed rows and ensures that the sum of
-sub-totals matches the total.
+3c. NAICS-3 digit residual columns are calculated by subtracting known
+sub‑industry totals from their parent category, allowing the model to
+calculate and display “Other” industry rows at NAICS 3-digit level (one
+for food, one for beverages, tobacco and cannabis). This method replaces
+categories labeled as "Other" in the original data or those where data
+suppression is a significant issue. This method also ensures that the
+sum of the values at NAICS-4 matches the total for NAICS -3 digit level.
 
 ```{r 3c Residual calculation}
 
-## Residual categories are created by subtracting the known sub‑industry totals from their parent category, thus allowing the model to calculate and display an “other” industry row (one for food, one for beverages, tobacco and cannabis) that replaces suppressed rows and ensures that the sum of sub-totals matches the total. 
+# Adjustment of a value in the year 2017 to prevent the value of the 3-digit
+# NAICS [312] from being lower than that of the 4-digit NAICS [3121]
+NAICS4$val_interp[
+  which(NAICS4$NAICS_Code == "3121" 
+        & NAICS4$REF_DATE == "2017" 
+        & NAICS4$Principal.statistics == "Revenue from goods manufactured"
+        & NAICS4$GEO == "British Columbia"
+        )] <-  NAICS3$val_interp[which(NAICS3$NAICS_Code == "312" 
+            & NAICS3$REF_DATE == "2017" 
+            & NAICS3$Principal.statistics == "Revenue from goods manufactured"
+            & NAICS3$GEO == "British Columbia"
+            )]
 
-# Combine NAICS levels 3 and 4 in the same object 
-NAICS3and4 <- rbind(NAICS3, NAICS4)
+# Combine NAICS levels 3 and 4 in the same object for easier processing
+NAICS3and4 <- data.table::rbindlist(list(NAICS3, NAICS4), fill = TRUE)
 
-# Define set of NAICS codes used to assemble 311R (residual, other food manuf.): 
+# Define set of NAICS codes used to assemble 3119 (residual, other food manuf.): 
 # All except 3119 (Other food manuf.)
 naics_set311 <- c("311", "3111", "3112", "3113", "3114"
                   , "3115", "3116", "3117", "3118")
-label311 <- "3119 Other food manufacturing"
+
+# Define set of NAICS codes to recalculate 3119 (residual, other food manuf.): 
+# All except 3119 (Other food manuf.)
+naics_set311 <- c("311", "3111", "3112", "3113", "3114"
+                  , "3115", "3116", "3117", "3118")
+label311 <- "3119"
 
 # Subtotals for each code within groups
 subtotals <- NAICS3and4[NAICS_Code %in% naics_set311,
-  .(val_norm = sum(val_norm, na.rm = TRUE)),
+  .(val_interp = sum(val_interp, na.rm = TRUE)),
   by = .(REF_DATE, GEO, Principal.statistics, UOM, NAICS_Code)
 ]
 
@@ -452,12 +411,12 @@ subtotals <- NAICS3and4[NAICS_Code %in% naics_set311,
 wide311 <- dcast(
   subtotals,
   REF_DATE + GEO + Principal.statistics + UOM ~ NAICS_Code,
-  value.var = "val_norm"
+  value.var = "val_interp"
 )
 
 # Calculate residuals to override suppression
 wide311[, `:=`(
-  val_norm311 = fifelse(is.na(`311`), 0, `311`)
+  val_interp311 = fifelse(is.na(`311`), 0, `311`)
               - fifelse(is.na(`3111`), 0, `3111`)
               - fifelse(is.na(`3112`), 0, `3112`)
               - fifelse(is.na(`3113`), 0, `3113`)
@@ -466,24 +425,24 @@ wide311[, `:=`(
               - fifelse(is.na(`3116`), 0, `3116`)
               - fifelse(is.na(`3117`), 0, `3117`)
               - fifelse(is.na(`3118`), 0, `3118`),
-  NAICS_Code = label311,
+  NAICS_Code = "3119",
   NAICS      = "3119 Other food manufacturing"
 )]
 
-# Drop unused columns for the join"
+# Drop unused columns to simplify the join
 wide311 <- subset(wide311, select = -c(`311`, `3111`, `3112`, `3113`, `3114`
                                        , `3115`, `3116`, `3117`, `3118`))
 
-# Rename val_norm311 to val_norm
-wide311 <- wide311 %>% rename(val_norm = val_norm311)
+# Rename 'val_interp311' to 'val_interp'
+wide311 <- wide311 %>% rename(val_interp = val_interp311)
 
-# Define set of NAICS codes to assemble 312R (residual, other beverage manuf.)
+# Define set of NAICS to calculate 3129 (residual, Tobacco and Cannabis manuf.)
 naics_set312 <- c("312", "3121")
-label312 <- "3122 Other beverage, tobacco and cannabis manufacturing"
+label312 <- "3129"
 
 # Subtotals for each code within groups
 subtotals312 <- NAICS3and4[NAICS_Code %in% naics_set312,
-  .(val_norm = sum(val_norm, na.rm = TRUE)),
+  .(val_interp = sum(val_interp, na.rm = TRUE)),
   by = .(REF_DATE, GEO, Principal.statistics, UOM, NAICS_Code)
 ]
 
@@ -491,106 +450,57 @@ subtotals312 <- NAICS3and4[NAICS_Code %in% naics_set312,
 wide312 <- dcast(
   subtotals312,
   REF_DATE + GEO + Principal.statistics + UOM ~ NAICS_Code,
-  value.var = "val_norm")
+  value.var = "val_interp")
 
 # Calculate residuals to override suppression
 wide312[, `:=`(
-  val_norm312  = fifelse(is.na(`312`), 0, `312`)
+  val_interp312  = fifelse(is.na(`312`), 0, `312`)
               - fifelse(is.na(`3121`), 0, `3121`),
   NAICS_Code = label312,
-  NAICS      = "3122 Other beverage, tobacco and cannabis manufacturing"
+  NAICS      = "3129 Tobacco and cannabis product manufacturing"
+
 )]
 
-# Drop unused columns for the join"
+# Drop unused columns to simplify the join
 wide312 <- subset(wide312, select = -c(`312`, `3121`))
 
-# Rename val_norm312 to val_norm
-wide312 <- wide312 %>% rename(val_norm = val_norm312)
+# Rename 'val_interp312' to 'val_interp'
+wide312 <- wide312 %>% rename(val_interp = val_interp312)
 
 # Join the two aggregated data frames by 'Region'
 diff_rows_NAICS3and4 <- full_join(wide311, wide312, by = c("REF_DATE", "GEO"
                           , "Principal.statistics", "UOM", "NAICS_Code"
-                          , "NAICS", "val_norm"))
+                          , "NAICS", "val_interp"))
 
-# Final steps to add calculated rows (create custom set) and rename labels
-NAICS3and4_with_custom <- rbindlist(list(NAICS3and4, diff_rows_NAICS3and4)
+# Drop unused NAICS codes after the residual calculation
+NAICS3and4 <- NAICS3and4[ !NAICS3and4$NAICS_Code %in% c("3119", "3122", "3123"), ]
+
+# Append calculated rows (residuals) and rename labels
+NAICS3and4 <- rbindlist(list(NAICS3and4, diff_rows_NAICS3and4)
                                     , use.names = TRUE, fill = TRUE)
 
-setorder(NAICS3and4_with_custom, REF_DATE, GEO, Principal.statistics, NAICS_Code)
-
-NAICS3and4_with_custom$NAICS_Code[
-  which(NAICS3and4_with_custom$NAICS_Code == "311")] <- "311 Food Manufacturing"
-NAICS3and4_with_custom$NAICS_Code[
-  which(NAICS3and4_with_custom$NAICS_Code == "312")] <- "312 Beverage and tobacco product manufacturing"
 
 ```
 
 3d. Identify imputed or interpolated data
 
 The script also tags all imputed or interpolated cells in red font so
-they can be easily identified. Using [if/then?]
+they can be easily identified. Using [if/then] logic, it checks each row
+for missing values that were filled in during the previous steps. If a
+value was imputed or interpolated, the font colour becomes red.
 
 ```{r 3d Adding red font style on imputed and interpolated cells}
 
+# Create function to check if a value is positive numeric and not NA
+is_pos <- function(x) {
+  is.numeric(x) & !is.na(x) & x > 0}
 
-#  Describe step
-NAICS3and4_with_custom$FontColour <- "#234075"
-
-# Describe steps
-NAICS3and4_with_custom$FontColour[which(NAICS3and4_with_custom$REF_DATE == "2022" 
-  & NAICS3and4_with_custom$GEO == "British Columbia"  
-  & NAICS3and4_with_custom$NAICS_Code == "312")] <- "Red"
-
-# Describe steps
-NAICS3and4_with_custom$FontColour[which(NAICS3and4_with_custom$REF_DATE == "2022" 
-  & NAICS3and4_with_custom$GEO == "British Columbia"
-  & NAICS3and4_with_custom$NAICS_Code == "3121"
-  & NAICS3and4_with_custom$Principal.statistics 
-    == "Revenue from goods manufactured")] <- "Red"
-
-# Describe steps
-NAICS3and4_with_custom$FontColour[which(NAICS3and4_with_custom$REF_DATE == "2024" 
-  & NAICS3and4_with_custom$GEO == "British Columbia"
-  & NAICS3and4_with_custom$NAICS_Code == "312"
-  & NAICS3and4_with_custom$Principal.statistics 
-    == "Revenue from goods manufactured")] <- "Red"
-
-# Describe steps
-NAICS3and4_with_custom$FontColour[which(NAICS3and4_with_custom$REF_DATE == "2018" 
-  & NAICS3and4_with_custom$GEO == "British Columbia"
-  & NAICS3and4_with_custom$NAICS_Code == "3115"
-  & NAICS3and4_with_custom$Principal.statistics 
-    == "Revenue from goods manufactured")] <- "Red"
-
-# Describe steps
-NAICS3and4_with_custom$FontColour[which(NAICS3and4_with_custom$REF_DATE == "2018" 
-  & NAICS3and4_with_custom$GEO == "British Columbia"
-  & NAICS3and4_with_custom$NAICS_Code == "3117"
-  & NAICS3and4_with_custom$Principal.statistics 
-    == "Revenue from goods manufactured")] <- "Red"
-
-# Describe steps
-NAICS3and4_with_custom$FontColour[which(NAICS3and4_with_custom$REF_DATE == "2014" 
-  & NAICS3and4_with_custom$GEO == "British Columbia"
-  & NAICS3and4_with_custom$NAICS_Code == "3117"
-  & NAICS3and4_with_custom$Principal.statistics 
-    == "Revenue from goods manufactured")] <- "Red"
-
-# Describe steps
-NAICS3and4_with_custom$FontColour[which(NAICS3and4_with_custom$REF_DATE == "2015" 
-  & NAICS3and4_with_custom$GEO == "British Columbia"
-  & NAICS3and4_with_custom$NAICS_Code == "3117")] <- "Red"
-
-# Restore NAICS4 while removing 3-digit rows ([311], [312]),
-#  Keeping all 4-digit rows (including residuals)
-NAICS4 <- NAICS3and4_with_custom[NAICS_Code != '311 Food Manufacturing']
-NAICS4 <- NAICS4[NAICS_Code != '312 Beverage and tobacco product manufacturing']
-
-# Drop NAICS Codes (rows) that have been re-calculated as 311R and 312R 
-NAICS4 <- NAICS4[NAICS_Code != '3119']
-NAICS4 <- NAICS4[NAICS_Code != '3122']
-NAICS4 <- NAICS4[NAICS_Code != '3123']
-
+# Apply BC Gov blue font colour as the standard and red font to imputed values 
+# in val_norm
+NAICS3and4$FontColour <- ifelse(is.na(NAICS3and4$val_norm) 
+                                        & is_pos(NAICS3and4$val_interp)
+                                        , "Red", "#234075"
+                                )
 ```
 
 # 4. Export and save the output (.csv) in the Data Library
@@ -610,17 +520,16 @@ Remember to replace "\\" with "/"
 # Update the IDIR entry below
 ## Edit to the desired data library destination as: "C:/Users/Enter_Your_IDIR_here/..."
 sharepoint_path <- 
-  "C:/Users/lebautis/Government of BC/SICI Data Library Subsite - Unpublished Data"
+  "C:/Users/ABASTOS/Government of BC/SICI Data Library Subsite - Unpublished Data"
 
 # Create a named list of data frames and file names
 dfs <- list(
   "FoodBevManu_NAICS4.csv" = NAICS4,
-  "FoodBevManu_NAICS3.csv" = NAICS3
+  "FoodBevManu_NAICS3.csv" = NAICS3,
+  "FoodBevManu_NAICS3and4.csv" = NAICS3and4
 )
 
 # Loop through and write each CSV file to the Data Library (Unpublished)
 for (fname in names(dfs)) {
   fwrite(dfs[[fname]], file.path(sharepoint_path, fname))
 }
-
-```
