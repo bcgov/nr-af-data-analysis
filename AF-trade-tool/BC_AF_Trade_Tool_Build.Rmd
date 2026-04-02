@@ -22,6 +22,8 @@ Contact [alstats\@gov.bc.ca](mailto:alstats@gov.bc.ca) for any questions. The fo
 
 # Set-up & Library
 
+The timeout settings is 10 mins because the zip file is large and the default timeout of 1 min is insufficient to download and unzip the file.
+
 ```{r Set-up, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
@@ -52,6 +54,12 @@ The format and script to load data from Open Government changes because the stru
 
 As of February 2026, SITS cannot yet directly connect to a SharePoint URL to access the shared Unpublished Data library. The interim workaround is to sync that library to the user's Desktop and change the URL manually. Remember to replace "\\" with "/" and note that the timeout settings is 10 mins because the zip file is large and the default timeout of 1 min is insufficient to download and unzip the file.
 
+Until BC Gov admins grant access, SharePoint files cannot easily be pulled using the **M365** R package. The temporary workaround is to sync the Unpublished Data Library with each user's desktop which needs to be updated in the code:
+
+```         
+"C:/Users/[replace with IDIR]/Government of BC/SICI Data Library Subsite - Unpublished Data"
+```
+
 ### Domestic Export
 
 -   The URL for the .zip file changes and needs updating. It is formatted like:
@@ -75,7 +83,7 @@ https://www150.statcan.gc.ca/n1/pub/##-###-x/#######/zip/CIMT-CICM_Dom_Exp_YYYY.
 tic()
 
 # Set working directory
-setwd("C:/Users/lebautis/Government of BC/SICI Data Library Subsite - Unpublished Data")
+setwd("C:/Users/[replace with IDIR]/Government of BC/SICI Data Library Subsite - Unpublished Data")
 
 # Define the min and max years (EDIT THIS as needed) for loop and binding
 years <- 2015:2025
@@ -162,7 +170,7 @@ Trade_DomExport <- rbindlist(list, use.names = TRUE, fill = TRUE)
 
 # Write the csv file with same dynamic name into the working directory
 fwrite(Trade_DomExport, 
-       "C:/Users/lebautis/Government of BC/SICI Data Library Subsite - Unpublished Data/Trade_DomExport.csv",
+       "C:/Users/[replace with IDIR]/Government of BC/SICI Data Library Subsite - Unpublished Data/Trade_DomExport.csv",
        row.names = FALSE,
        col.names = TRUE,
        buffMB = 10)
@@ -197,7 +205,7 @@ https://www150.statcan.gc.ca/n1/pub/##-###-x/#######/zip/CIMT-CICM_Dom_Exp_YYYY.
 tic()
 
 # Set working directory
-setwd("C:/Users/lebautis/Government of BC/SICI Data Library Subsite - Unpublished Data")
+setwd("C:/Users/[replace with IDIR]/Government of BC/SICI Data Library Subsite - Unpublished Data")
 
 # Define the years (EDIT THIS as needed) for loop and binding
 years <- 2015:2025
@@ -284,7 +292,7 @@ Trade_Import <- rbindlist(list, use.names = TRUE, fill = TRUE)
 
 # Write the csv file with same dynamic name into the working directory
 fwrite(Trade_Import, 
-       "C:/Users/lebautis/Government of BC/SICI Data Library Subsite - Unpublished Data/Trade_Import.csv",
+       "C:/Users/leb[replace with IDIR]autis/Government of BC/SICI Data Library Subsite - Unpublished Data/Trade_Import.csv",
        row.names = FALSE,
        col.names = TRUE,
        buffMB = 10)
@@ -295,4 +303,3 @@ rm(df, list, obj_names)
 # Stop timer
 toc()
 ```
-

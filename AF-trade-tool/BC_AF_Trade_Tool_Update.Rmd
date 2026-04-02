@@ -134,8 +134,8 @@ DomExport_Update <- DomExport_Update %>%
 # reformat the date column
 DomExport_Update$Date <- ym(DomExport_Update$Date)
 
-# Load the list of agriculture, seafood and food manufacturing HS codes 
-Commodity_REF <- fread("C:/Users/lebautis/Government of BC/SICI Data Library Subsite - Unpublished Data/CATSNET HS8.csv",
+# Load the list of agriculture, seafood and food manufacturing HS codes
+Commodity_REF <- fread("C:/Users/[replace with IDIR]/Government of BC/SICI Data Library Subsite - Unpublished Data/CATSNET HS8.csv",
                        colClasses = c(HS8_code = "character"))
 
 
@@ -208,7 +208,7 @@ Import_Update$Date <- ym(Import_Update$Date)
 Import_Update$State[is.na(Import_Update$State) | Import_Update$State == ""] <- "Country"
 
 # Load the list of agriculture, seafood and food manufacturing HS codes 
-Commodity_REF <- fread("C:/Users/lebautis/Government of BC/SICI Data Library Subsite - Unpublished Data/CATSNET HS10.csv",
+Commodity_REF <- fread("C:/Users/[replace with IDIR]/Government of BC/SICI Data Library Subsite - Unpublished Data/CATSNET HS10.csv",
                        colClasses = c(HS10_code = "character"))
 
 # Join left with the Commodity_REF to filter for relevant HS codes only
@@ -238,7 +238,7 @@ After the above directory URL has been updated, the following 2 chunks will load
 tic()
 
 # Set the working directory 
-setwd("C:/Users/lebautis/Government of BC/SICI Data Library Subsite - Unpublished Data")
+setwd("C:/Users/[replace with IDIR]/Government of BC/SICI Data Library Subsite - Unpublished Data")
 
 # Read the CSV file into a data frame
 Trade_DomExport <- read.csv("Trade_DomExport.csv", stringsAsFactors = FALSE, colClasses = c(HS8_code = "character", Value = "numeric"))
@@ -263,7 +263,7 @@ toc()
 tic()
 
 # Set the working directory 
-setwd("C:/Users/lebautis/Government of BC/SICI Data Library Subsite - Unpublished Data")
+setwd("C:/Users/[replace with IDIR]/Government of BC/SICI Data Library Subsite - Unpublished Data")
 
 # Read the CSV file into a data frame
 Trade_Import <- read.csv("Trade_Import.csv", stringsAsFactors = FALSE, colClasses = c(HS8_code = "character", Value = "numeric"))
@@ -304,7 +304,7 @@ After the above directory URL has been updated, the rest of the chunk uses the f
 tic()
 
 # Set the working directory to the location of the CSV file
-setwd("C:/Users/lebautis/Government of BC/SICI Data Library Subsite - Unpublished Data")
+setwd("C:/Users/[replace with IDIR]/Government of BC/SICI Data Library Subsite - Unpublished Data")
 
 fwrite(Trade_DomExport, "Trade_DomExport.csv",
        row.names = FALSE,
