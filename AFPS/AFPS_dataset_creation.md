@@ -107,7 +107,45 @@ new_df['Species'] = new_df[['speciesType.label', 'salmon_species']].bfill(axis=1
 new_df['Value'] = new_df[['wholesaleValueShellfish', 'wholesaleValueFish', 'wholesaleValueSalmon', 'wholesaleValuePlants']].bfill(axis=1).iloc[:, 0]
 
 # 9. Coalesce quantity: same pattern as value -- pick whichever category column is populated
+# 1️⃣ Select all the grid columns
+grid_cols = new.columns[new.columns.str.contains('dataGrid', case=False, na=False)]
+
+# 2️⃣ Melt to long format so each grid entry is a row
+long = new.melt(
+    id_vars=[col for col in new.columns if col not in grid_cols],  # metadata columns automatically
+    value_vars=grid_cols,
+    var_name="grid_name",
+    value_name="grid_data"
+)
+
+# 3️⃣ Explode the list of dicts in each cell
+long = long.explode("grid_data").reset_index(drop=True)
+
+# 4️⃣ Normalize JSON into flat columns
+grid_df = pd.json_normalize(long["grid_data"])
+
+# 5️⃣ Copy metadata columns from long
+metadata_cols = [col for col in long.columns if col not in ['grid_data']]
+meta_df = long[metadata_cols].reset_index(drop=True)
+
+# 6️⃣ Combine metadata with normalized grid data
+new_df = pd.concat([meta_df, grid_df.reset_index(drop=True)], axis=1)
+
+# 7️⃣ Coalesce species
+new_df['Species'] = new_df[['speciesType.label', 'salmon_species']].bfill(axis=1).iloc[:, 0]
+
+# 8️⃣ Coalesce values across wholesale columns
+new_df['Value'] = new_df[['wholesaleValueShellfish', 'wholesaleValueFish', 'wholesaleValueSalmon', 'wholesaleValuePlants']].bfill(axis=1).iloc[:, 0]
+
+# 9️⃣ Coalesce quantities
+# For live shellfish rows, override QuantityShellfish with QuantityFish1 (QuantityFish1 = sold qty which is what we need - NOT purchased)
+live_shellfish_mask = new_df['grid_name'].str.contains('ShellfishLive', case=False, na=False)
+
+if 'QuantityFish1' in new_df.columns:
+    new_df.loc[live_shellfish_mask, 'QuantityShellfish'] = new_df.loc[live_shellfish_mask, 'QuantityFish1']
+
 new_df['Quantity'] = new_df[['QuantityShellfish', 'QuantityFish', 'QuantitySalmon', 'QuantityPlants']].bfill(axis=1).iloc[:, 0]
+
 ```
 
 ### Drop NAs
