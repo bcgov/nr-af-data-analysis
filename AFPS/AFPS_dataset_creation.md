@@ -76,37 +76,6 @@ new = submitted[cols]
 Each `dataGrid*` column stores a list of dicts -- one dict per product row entered by the submitter. To work with this data in a flat tabular format, the grids need to be melted, exploded, and normalized. Because different seafood categories use different column names for the same concepts (e.g. `wholesaleValueFish` vs `wholesaleValueSalmon`), Species, Value, and Quantity are coalesced into unified columns at the end.
 
 ```python
-# 1. Identify all dataGrid columns -- these are the nested product entry grids
-grid_cols = new.columns[new.columns.str.contains('dataGrid', case=False, na=False)]
-
-# 2. Melt to long format so each grid column becomes a row, paired with its submission's metadata
-long = new.melt(
-    id_vars=[col for col in new.columns if col not in grid_cols],  # all non-grid columns become id_vars
-    value_vars=grid_cols,
-    var_name="grid_name",   # which seafood category this row came from
-    value_name="grid_data"  # the list of product dicts for that category
-)
-
-# 3. Explode: each list of product dicts becomes individual rows (one row per product entry)
-long = long.explode("grid_data").reset_index(drop=True)
-
-# 4. Normalize the dict in each grid_data cell into flat columns
-grid_df = pd.json_normalize(long["grid_data"])
-
-# 5. Separate the submission metadata from the grid columns for recombining
-metadata_cols = [col for col in long.columns if col not in ['grid_name', 'grid_data']]
-meta_df = long[metadata_cols].reset_index(drop=True)
-
-# 6. Combine submission metadata with the normalized product grid data side-by-side
-new_df = pd.concat([meta_df, grid_df.reset_index(drop=True)], axis=1)
-
-# 7. Coalesce species: different grids use different column names for the species field
-new_df['Species'] = new_df[['speciesType.label', 'salmon_species']].bfill(axis=1).iloc[:, 0]
-
-# 8. Coalesce wholesale value: each grid category has its own value column name
-new_df['Value'] = new_df[['wholesaleValueShellfish', 'wholesaleValueFish', 'wholesaleValueSalmon', 'wholesaleValuePlants']].bfill(axis=1).iloc[:, 0]
-
-# 9. Coalesce quantity: same pattern as value -- pick whichever category column is populated
 # 1️⃣ Select all the grid columns
 grid_cols = new.columns[new.columns.str.contains('dataGrid', case=False, na=False)]
 
