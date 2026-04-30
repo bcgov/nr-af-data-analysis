@@ -211,11 +211,12 @@ Import_Update$State[is.na(Import_Update$State) | Import_Update$State == ""] <- "
 Commodity_REF <- fread("C:/Users/[replace with IDIR]/Government of BC/SICI Data Library Subsite - Unpublished Data/CATSNET HS10.csv",
                        colClasses = c(HS10_code = "character"))
 
+Commodity_REF <- Commodity_REF %>% 
+  rename(HS10 = HS10_code)
+
 # Join left with the Commodity_REF to filter for relevant HS codes only
-Import_Update <- Import_Update %>% 
-  merge(Commodity_REF,by="HS10_code") %>%
-  rename(HS_description = HS10_description) %>%
-  select(-HS10_code)
+Import_Update <- Import_Update  %>%
+  merge(Commodity_REF,by="HS10")
 
 # end timer and report
 toc()
@@ -269,7 +270,7 @@ setwd("C:/Users/[replace with IDIR]/Government of BC/SICI Data Library Subsite -
 Trade_Import <- read.csv("Trade_Import.csv", stringsAsFactors = FALSE, colClasses = c(HS8_code = "character", Value = "numeric"))
 
 # Specify date as type
-Trade_Import$Date <- ymd(Trade_Importt$Date)
+Trade_Import$Date <- ymd(Trade_Import$Date)
 
 ### ONLY RUN TO CLEAN 2024 ONWARDS
 Trade_Import <- Trade_Import %>%
