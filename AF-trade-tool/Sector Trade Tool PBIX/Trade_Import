@@ -1,0 +1,13 @@
+let
+    Source = Csv.Document(Web.Contents("https://bcgov.sharepoint.com/sites/AF-SICI/Raw%20Data/Trade_Import.csv"),[Delimiter=",", Columns=9, Encoding=65001, QuoteStyle=QuoteStyle.None]),
+    #"Promoted Headers" = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"HS10_code", type text}, {"Date", type date}, {"Country", type text}, {"Province", type text}, {"State", type text}, {"Value", Int64.Type}, {"Quantity", Int64.Type}, {"UOM", type text}, {"HS_description", type text}}),
+    #"Renamed Columns" = Table.RenameColumns(#"Changed Type",{{"Value", "Value ($)"}, {"Quantity", "Quantity (UOM)"}}),
+    #"Unpivoted Columns" = Table.UnpivotOtherColumns(#"Renamed Columns", {"HS10_code", "Date", "Country", "Province", "State", "UOM", "HS_description"}, "Estimate", "VALUE"),
+    #"Added Custom" = Table.AddColumn(#"Unpivoted Columns", "HS10", each [HS10_code]&" "&[HS_description]),
+    #"Inserted First Characters" = Table.AddColumn(#"Added Custom", "HS6_code", each Text.Start([HS10_code], 6), type text),
+    #"Inserted First Characters1" = Table.AddColumn(#"Inserted First Characters", "HS4_code", each Text.Start([HS10_code], 4), type text),
+    #"Inserted First Characters2" = Table.AddColumn(#"Inserted First Characters1", "HS2_code", each Text.Start([HS10_code], 2), type text),
+    #"Inserted First Characters3" = Table.AddColumn(#"Inserted First Characters2", "Year", each Text.Start(Text.From([Date], "en-CA"), 4), type text)
+in
+    #"Inserted First Characters3"
