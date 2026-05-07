@@ -1,0 +1,11 @@
+let
+    Source = SharePoint.Files("https://bcgov.sharepoint.com/sites/AF-SICI", [ApiVersion = 15]),
+    #"Trade_DomExport_Commodity_Classification csv_https://bcgov sharepoint com/sites/AF-SICI/Raw Data/" = Source{[Name="Trade_DomExport_Commodity_Classification.csv",#"Folder Path"="https://bcgov.sharepoint.com/sites/AF-SICI/Raw Data/"]}[Content],
+    #"Imported CSV" = Csv.Document(#"Trade_DomExport_Commodity_Classification csv_https://bcgov sharepoint com/sites/AF-SICI/Raw Data/",[Delimiter=",", Columns=11, Encoding=65001, QuoteStyle=QuoteStyle.None]),
+    #"Promoted Headers" = Table.PromoteHeaders(#"Imported CSV", [PromoteAllScalars=true]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"Sector", type text}, {"Sub-Sector", type text}, {"Commodity Group", type text}, {"Commodity_Detail", type text}, {"HS8", type text}, {"HS8_code", type text}, {"NAICS6", type text}, {"NAICS6_Code", type text}, {"NAICS5_Code", type text}, {"NAICS4_Code", type text}, {"NAICS3_Code", type text}}),
+    #"Inserted First Characters" = Table.AddColumn(#"Changed Type", "HS6", each Text.Start([HS8_code], 6), type text),
+    #"Inserted First Characters1" = Table.AddColumn(#"Inserted First Characters", "HS4", each Text.Start([HS6], 4), type text),
+    #"Inserted First Characters2" = Table.AddColumn(#"Inserted First Characters1", "HS2", each Text.Start([HS4], 2), type text)
+in
+    #"Inserted First Characters2"
