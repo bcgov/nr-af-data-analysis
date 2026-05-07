@@ -1,0 +1,7 @@
+let
+    Source = Table.FuzzyNestedJoin(FCR_Annual_3210004501, {"GEO"}, #"CEAG2021_FlatFile - Revenue", {"GEO"}, "CEAG2021_FlatFile - Revenue", JoinKind.LeftOuter, [IgnoreCase=true, IgnoreSpace=true]),
+    #"Expanded CEAG2021_FlatFile - Revenue" = Table.ExpandTableColumn(Source, "CEAG2021_FlatFile - Revenue", {"CCS", "Farms reporting of total farms", "CCS Short", "CCS Revenue Of BC"}, {"CCS", "Farms reporting of total farms", "CCS Short", "CCS Revenue Of BC"}),
+    #"Calculated CCS FCR estimate" = Table.AddColumn(#"Expanded CEAG2021_FlatFile - Revenue", "CCS_Value", each [VALUE]*[CCS Revenue Of BC]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Calculated CCS FCR estimate",{{"CCS_Value", Currency.Type}})
+in
+    #"Changed Type"
