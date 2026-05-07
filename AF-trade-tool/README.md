@@ -12,3 +12,21 @@ To visualize and apply plain language to the data, reference tables (e.g., **Com
 https://bcgov.sharepoint.com/sites/AF-SPID-SICI_Subsite3/Project%20Files/Forms/AllItems.aspx
 
 When the PowerBI is updated with the latest data, the project lead needs to publish the dashboard on the SICI Internal Dashboards workspace and ensure that the interal BC Gov app is also updated. 
+
+Within the Sector Trade Tool.pbix file, there are 8 queries (M) and the code in this repository are the SSOT:
+1) Trade_Import
+2) Trade_Import_Commodity_Classification
+3) Trade_DomExport
+4) Trade_DomExport_Commodity_Classification
+5) REF_Year
+6) TradeREF_Country
+7) TradeREF_Province
+8) TradeREF_State
+
+Trade_Import and Trade_DomExport have a **many-to-one relationship** with the Commodity_Classification queries by the corresponding HS10 and HS8 columns
+The remaining queries are tools and also have a many-to-one relationship with the Trade_Import and Trade_DomExport source datasets through:
+REF_Year's Year column to Trade_Import & Trade_DomExport's Year column
+TradeREF_Country's Country_Code column to Trade_Import & Trade_DomExport's Country column
+TradeREF_Province's Province_Code column to Trade_Import & Trade_DomExport's Province column
+TradeREF_State's State_Code column to Trade_Import & Trade_DomExport's State column
+
