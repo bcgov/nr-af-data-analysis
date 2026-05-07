@@ -1,0 +1,6 @@
+let
+    Source = Table.FromRows(Json.Document(Binary.Decompress(Binary.FromText("bZLbbtswDIZfRch19RCrsRZD22yrd7gIcsE4RExYJlOJWpa3n6TMrmv7SuTPDzyI3O02FXg6iGzuRmt/t9s8eAjo7YN4NY8o/oQJWBEzWyGrB2eeRBQZrjnVXMrcZwg6hQYzlOjgmXuJfAS/JG7lzS9wDq9jO4OfiUePoEXiRuIf9Il6QfUyUTJXv0XoKbT2mZwTQU3cUitk5NASo6kkdZ+xj0Jm7qPrUgd2i00LXf7JwSoZlLrEz9QnUupB7SSafrWdZK07TKPb7zE9pmrBO1FdA4uPns2rNB1hSMg3hAbNKw3zTv1ldFjW1w4YTsAJGc0SFxf7A4Gt2xgucM77nUtjI9Msq9QQtzX15Dro03zzij9a6c9B2G6pEQcpPFcy9ckd0thkKwdXeYui4+d8CQ74eGsezqTgynnfrOnIw1Y/+rehe/n7fmvLvHKhtE5+R+ZKpl7SLav5Dccj8UmF1zJt0+DUl7P5b5WVyQWdG3e2cnZ16ljbRhjWsv7kjuXC5lkaUCqVF9J+/w8=", BinaryEncoding.Base64), Compression.Deflate)), let _t = ((type nullable text) meta [Serialized.Text = true]) in type table [CD = _t, #"BC MAF Group" = _t]),
+    #"Changed Type" = Table.TransformColumnTypes(Source,{{"CD", type text}, {"BC MAF Group", type text}}),
+    #"Renamed Columns" = Table.RenameColumns(#"Changed Type",{{"CD", "Census Division"}})
+in
+    #"Renamed Columns"
