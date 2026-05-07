@@ -1,0 +1,4 @@
+let
+    Source = Table.FromRows(Json.Document(Binary.Decompress(Binary.FromText("nVSxbtwwDP0V4qYL4A4dszZXtMMlKZIAHYIMtE3fCaYlg5Li3t+Xsj10Me/QyZb4Hi2998z39903F4OHfZ27DjncwRd4ykNNsqt2R/dJMYWm331UCgwo0ShLcEwSK5CAMekboG/hIYh38WzwMrOSvsKFUGZK+CTZxj8g67KC7FuFrbRN9AGdXKAJk3HyA2mjPf1pOLfOn2By3EKrm4YYh+B7uixXHDKT1T43vVH+zr1RnKzOP4giGeWAyWJLmGhRvHPFo3L30Z0Myk9yXTG2CwI1UQdnkhaERsaGBvLpNmo7m/J/3MiYT2eNF+iiI5od22YGibS4NAbvLDGPeFnVqJck61Pbl+/uR80opaXPmXw0gqFtyokKSkN9DxNRH2+I9ZFxwAWIPGKDxlEfUXpiUEZtoZw3kvWUJV43/DmpSypd5qSObcJ+rfqs/+R66wqcT6Rb7ewcL8psNnnBunZWYF9wsKr/JOmKMq9lHBSlT47Tmma5FqXXRPN0u3lQvWWZR8Qm4DehL+puO/DxFw==", BinaryEncoding.Base64), Compression.Deflate)), let _t = ((type nullable text) meta [Serialized.Text = true]) in type table [Attribute = _t, Group = _t])
+in
+    Source
