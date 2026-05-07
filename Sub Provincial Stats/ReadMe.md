@@ -48,6 +48,7 @@ where:
 <img width="950" height="532" alt="image" src="https://github.com/user-attachments/assets/41763032-d3ac-4df4-aec2-68c62ef32752" />
 
 
+
 Regional Profiles.pbix includes
 
 -   16 Census of Ag 2021 queries:
