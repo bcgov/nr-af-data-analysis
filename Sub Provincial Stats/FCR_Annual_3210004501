@@ -1,0 +1,12 @@
+let
+    Source = R.Execute("library(cansim)#(lf)#(lf)#(lf)# Pull data from StatCan with date filter#(lf)df_3210004501 <- get_cansim_vector(#(lf)  vectors = ""v170270"",#(lf)  start_time = ""2020-01-01""#(lf))"),
+    df_1 = Source{[Name="df_3210004501"]}[Value],
+    #"Removed Columns" = Table.RemoveColumns(df_1,{"REF_DATE", "VALUE", "SCALAR_ID", "VECTOR", "cansimTableNumber", "COORDINATE", "SYMBOL", "releaseTime", "frequencyCode", "DECIMALS"}),
+    #"Added Conditional Column" = Table.AddColumn(#"Removed Columns", "GEO_Group", each if [GEO] = "Nova Scotia" then "Atlantic Region" else if [GEO] = "New Brunswick" then "Atlantic Region" else if [GEO] = "Prince Edward Island" then "Atlantic Region" else if [GEO] = "Newfoundland and Labrador" then "Atlantic Region" else if [GEO] = "Saskatchewan" then "Prairie Region" else if [GEO] = "Manitoba" then "Prairie Region" else if [GEO] = "Alberta" then "Prairie Region" else [GEO], type text),
+    #"Renamed Columns" = Table.RenameColumns(#"Added Conditional Column",{{"Type of cash receipts", "Sub-sector"}, {"Date", "REF_DATE"}, {"val_norm", "VALUE"}}),
+    #"Created Sector column" = Table.AddColumn(#"Renamed Columns", "Sector", each "Agriculture (excl aquaculture)"),
+    #"Clean up crop receipts" = Table.ReplaceValue(#"Created Sector column","Total crop receipts","Crop receipts",Replacer.ReplaceText,{"Sub-sector"}),
+    #"Clean up livestock receipts" = Table.ReplaceValue(#"Clean up crop receipts","Total livestock and livestock product receipts","Livestock & livestock product receipts",Replacer.ReplaceText,{"Sub-sector"}),
+    #"Clean up direct deposits" = Table.ReplaceValue(#"Clean up livestock receipts","Total direct payments","Direct payments",Replacer.ReplaceText,{"Sub-sector"})
+in
+    #"Clean up direct deposits"
