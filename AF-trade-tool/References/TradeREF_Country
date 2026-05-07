@@ -1,0 +1,7 @@
+let
+    Source = Csv.Document(Web.Contents("https://bcgov.sharepoint.com/sites/AF-SICI/Raw%20Data/Trade%20Updated%20Country%20Names.csv"),[Delimiter=",", Columns=3, Encoding=65001, QuoteStyle=QuoteStyle.None]),
+    #"Promoted Headers" = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),
+    #"Added Conditional Column" = Table.AddColumn(#"Promoted Headers", "Region", each if [CountryAbbreviation] = "US" then "US" else "Other countries"),
+    #"Removed Duplicates" = Table.Distinct(#"Added Conditional Column", {"CountryAbbreviation"})
+in
+    #"Removed Duplicates"
