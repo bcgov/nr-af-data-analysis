@@ -37,3 +37,5 @@ TradeREF_Province's Province_Code column to Trade_Import & Trade_DomExport's Pro
 
 TradeREF_State's State_Code column to Trade_Import & Trade_DomExport's State column
 
+<img width="1761" height="650" alt="image" src="https://github.com/user-attachments/assets/c2784706-81c6-46ab-bb23-42cea0775df3" />
+
