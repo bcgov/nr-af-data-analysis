@@ -9,6 +9,8 @@ Support ministry and other BC Government colleagues for a sense of regional impa
 
 How do we do it?
 
+For each part, there is a working .pbix file with queries (in M) to load and transform the data. The SSOT of those codes and queries are in this repository folder
+
 Sub-Provincial FCR.pbix: includes 3 queries
 1) CEAG2021_FlatFile - Revenue
 2) Sub-provincial FCR
@@ -48,7 +50,7 @@ NAICS4_Sector_REF
 Technology_REF
 Rank_REF
 
-For each PBIX, refresh data when appropriate, update visualizations and publish to the PowerBI Workspace
+Load and merge data with reference tables and create visualizations
 
 Where are the files?
 The working files are in SI Projects Site > Project Files > Sub Provincial Statistics
