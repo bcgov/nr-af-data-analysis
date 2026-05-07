@@ -1,0 +1,5 @@
+let
+    Source = Table.FromRows(Json.Document(Binary.Decompress(Binary.FromText("jdBNCsIwEAXgqwxZKRTJTJOqS8/gsnZR0qQGagOJAb29leou0Nk+Pubnta1AVCgqcbW9C2GAW5aSGnA+3W30Nomu+hrSW6ZGPG7P0XIxlzF6k6dnjvYXoyrGisq6NGTZv/5hwjz08Q0PN8LOvsx0gLQetf9D4sKaCxUXai5suPDEhWcmJG6PxO2RGD12Hw==", BinaryEncoding.Base64), Compression.Deflate)), let _t = ((type nullable text) meta [Serialized.Text = true]) in type table [NAICS4_Code = _t, Sector = _t]),
+    #"Changed Type" = Table.TransformColumnTypes(Source,{{"NAICS4_Code", Int64.Type}, {"Sector", type text}})
+in
+    #"Changed Type"
