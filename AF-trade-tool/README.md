@@ -23,6 +23,7 @@ Within the Sector Trade Tool.pbix file, there are 8 queries (M) and the code in 
 7) TradeREF_Province
 8) TradeREF_State
 
+Query relationships:
 Trade_Import and Trade_DomExport have a **many-to-one relationship** with the Commodity_Classification queries by the corresponding HS10 and HS8 columns
 The remaining queries are tools and also have a many-to-one relationship with the Trade_Import and Trade_DomExport source datasets through:
 REF_Year's Year column to Trade_Import & Trade_DomExport's Year column
