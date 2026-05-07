@@ -1,0 +1,10 @@
+let
+    Source = Csv.Document(Web.Contents("https://www150.statcan.gc.ca/t1/tbl1/en/dtl!downloadDbLoadingData.action?pid=9810005701&latestN=0&startDate=20210101&endDate=20210101&csvLocale=en&selectedMembers=%5B%5B4569%2C4591%2C4613%2C4627%2C4652%2C4718%2C4757%2C4785%2C4816%2C4832%2C4859%2C4884%2C4893%2C4902%2C4912%2C4952%2C5047%2C5057%2C5073%2C5093%2C5164%2C5186%2C5194%2C5212%2C5248%2C5300%2C5314%2C5335%2C5343%5D%2C%5B%5D%2C%5B%5D%2C%5B1%2C3%5D%5D&checkedLevels=1D1%2C2D1"),[Delimiter=",", Columns=17, Encoding=65001, QuoteStyle=QuoteStyle.None]),
+    #"Promoted Headers" = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"REF_DATE", Int64.Type}, {"GEO", type text}, {"DGUID", type text}, {"Household size (7)", type text}, {"Household type including census family structure (11)", type text}, {"Household income statistics (6)", type text}, {"UOM", type text}, {"UOM_ID", Int64.Type}, {"SCALAR_FACTOR", type text}, {"SCALAR_ID", Int64.Type}, {"VECTOR", type text}, {"COORDINATE", type text}, {"VALUE", Int64.Type}, {"STATUS", type text}, {"SYMBOL", type text}, {"TERMINATED", type text}, {"DECIMALS", Int64.Type}}),
+    #"Removed Other Columns" = Table.SelectColumns(#"Changed Type",{"GEO", "Household income statistics (6)", "VALUE"}),
+    #"Pivoted Column" = Table.Pivot(#"Removed Other Columns", List.Distinct(#"Removed Other Columns"[#"Household income statistics (6)"]), "Household income statistics (6)", "VALUE", List.Sum),
+    #"Removed Columns" = Table.RemoveColumns(#"Pivoted Column",{""}),
+    #"Filtered Rows" = Table.SelectRows(#"Removed Columns", each ([GEO] <> ""))
+in
+    #"Filtered Rows"
