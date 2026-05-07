@@ -1,4 +1,7 @@
 
+**BC Sub Provincial Stats**
+by: Leila Bautista (leila.bautista@gov.bc.ca)
+
 **What is it?**
 
 The Sub Provincial Stats is a Sector Intelligence Project that estimates
