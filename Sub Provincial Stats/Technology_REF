@@ -1,0 +1,5 @@
+let
+    Source = Table.FromRows(Json.Document(Binary.Decompress(Binary.FromText("vVJLT8MwDP4r1k4gdfyAnRET143HYdohbb3OIomD46gavx6nPE6EG9xa+3vZ8eGweswIfAJwRTk4xRGyIgrFCa5qbb38XsMa7pyEDIKJRa29Onbf7O39HoJLaWHhzXTTQWbyX7UW+8kJud4jiBkDxVQUjOFpcEocG6xb4Yi50dxX2+xCMlXFrC2Y53kt6NHZACe0hqc3lN+nFO5ZaYBA/qVO+jN494maBDGeuRgXXwulgLGVZocR52UR9iHTBZLwWIbqkS+2fyOYzAj9BfRsURLKsqDOdCYno8eca8ClOZtEPlPawJ69E0guom+t64+cnymOoEV6ar9Uw7qqb6An/qh2oKzO/2/8LbJVJJivncigYs+ZeLb7mKqPU25dysMSNpbQG9iETxWzOh7fAQ==", BinaryEncoding.Base64), Compression.Deflate)), let _t = ((type nullable text) meta [Serialized.Text = true]) in type table [Tech = _t]),
+    #"Changed Type" = Table.TransformColumnTypes(Source,{{"Tech", type text}})
+in
+    #"Changed Type"
