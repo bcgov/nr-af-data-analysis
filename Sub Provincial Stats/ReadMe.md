@@ -79,6 +79,8 @@ Regional Profiles.pbix includes
     Livestock_REF Crops_REF NAICS4_Sector_REF Technology_REF Rank_REF
 
 Load and merge data with reference tables and create visualizations
+<img width="1103" height="692" alt="image" src="https://github.com/user-attachments/assets/f4fa4390-3efa-4ac9-8d9b-cee4d2e60e8b" />
+
 
 Where are the files? The working files are in SI Projects Site \>
 Project Files \> Sub Provincial Statistics The PowerBI Workspace is
