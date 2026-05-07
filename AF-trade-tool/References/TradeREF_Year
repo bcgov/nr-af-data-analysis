@@ -1,0 +1,4 @@
+let
+    Source = Table.FromRows(Json.Document(Binary.Decompress(Binary.FromText("i45WMjIwNFWK1QEzzGAMcxjDAsawhDKMDGAMQxjDCMYwhjFMYAygybEA", BinaryEncoding.Base64), Compression.Deflate)), let _t = ((type nullable text) meta [Serialized.Text = true]) in type table [Year = _t])
+in
+    Source
