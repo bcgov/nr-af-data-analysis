@@ -1,0 +1,14 @@
+let
+    Source = Csv.Document(Web.Contents("https://bcgov.sharepoint.com/sites/AF-SICI/Raw%20Data/Trade_DomExport.csv"),[Delimiter=",", Columns=9, Encoding=1252, QuoteStyle=QuoteStyle.None]),
+    #"Promoted Headers" = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"HS8_code", type text}, {"Date", type date}, {"Country", type text}, {"Province", type text}, {"State", type text}, {"Value", Int64.Type}, {"Quantity", Int64.Type}, {"UOM", type text}, {"HS_description", type text}}),
+    #"Renamed Columns" = Table.RenameColumns(#"Changed Type",{{"Value", "Value"}}),
+    #"Renamed Columns1" = Table.RenameColumns(#"Renamed Columns",{{"Value", "Value ($)"}, {"Quantity", "Quantity (UOM)"}}),
+    #"Unpivoted Columns" = Table.UnpivotOtherColumns(#"Renamed Columns1", {"HS8_code", "Date", "Country", "Province", "State", "UOM", "HS_description"}, "Estimate", "VALUE"),
+    #"Added Custom" = Table.AddColumn(#"Unpivoted Columns", "HS8", each [HS8_code]&" "&[HS_description]),
+    #"Replaced Value" = Table.ReplaceValue(#"Added Custom","","NA",Replacer.ReplaceValue,{"Country"}),
+    #"Replaced Value1" = Table.ReplaceValue(#"Replaced Value","","Country",Replacer.ReplaceValue,{"State"}),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Replaced Value1",{{"VALUE", type number}}),
+    #"Inserted First Characters" = Table.AddColumn(#"Changed Type1", "Year", each Text.Start(Text.From([Date], "en-CA"), 4), type text)
+in
+    #"Inserted First Characters"
