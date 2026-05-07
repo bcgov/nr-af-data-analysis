@@ -1,0 +1,17 @@
+let
+    Source = Excel.Workbook(Web.Contents("https://bcgov.sharepoint.com/sites/AF-SICI/Raw%20Data/CEAG2021_CatNo97C0004%20-_2021_Census_of_Agriculture.xlsx"), null, true),
+    CEAG2021_FlatFile_97C0004_Sheet = Source{[Item="CEAG2021_FlatFile_97C0004",Kind="Sheet"]}[Data],
+    #"Removed Top Rows" = Table.Skip(CEAG2021_FlatFile_97C0004_Sheet,5),
+    #"Promoted Headers" = Table.PromoteHeaders(#"Removed Top Rows", [PromoteAllScalars=true]),
+    #"Removed Top Rows1" = Table.Skip(#"Promoted Headers",3),
+    #"Filtered Rows" = Table.SelectRows(#"Removed Top Rows1", each ([#"Province - Code"] = 59) and ([#"Census Consolidated Subdivision (CCS) - Code"] = 0) and ([#"Census Division (CD) - Code"] <> 0)),
+    #"Split Column by Delimiter" = Table.SplitColumn(#"Filtered Rows", "Geography (English)", Splitter.SplitTextByEachDelimiter({","}, QuoteStyle.Csv, false), {"CD", "Geography (English).2"}),
+    #"Removed Columns" = Table.RemoveColumns(#"Split Column by Delimiter",{"Province - Code", "Census Agricultural Region (CAR) - Code", "Census Division (CD) - Code", "Census Consolidated Subdivision (CCS) - Code", "Geography (English).2", "Geography (French)"}),
+    #"Unpivoted Columns" = Table.UnpivotOtherColumns(#"Removed Columns", {"CD"}, "Attribute", "Value"),
+    #"Filtered Rows1" = Table.SelectRows(#"Unpivoted Columns", each Text.StartsWith([Attribute], "Total operating revenue") and Text.EndsWith([Attribute], "- Farms reporting")),
+    #"Filtered Rows2" = Table.SelectRows(#"Filtered Rows1", each [Attribute] <> "Total operating revenues (excluding sales of forest products) in the calendar year prior to the census or for the last complete accounting (fiscal) year prior to the census - Farms reporting"),
+    #"Changed Type" = Table.TransformColumnTypes(#"Filtered Rows2",{{"Value", type number}}),
+    #"Replaced Value" = Table.ReplaceValue(#"Changed Type","Total operating revenues (excluding sales of forest products): ","",Replacer.ReplaceText,{"Attribute"}),
+    #"Replaced Value1" = Table.ReplaceValue(#"Replaced Value"," - Farms reporting","",Replacer.ReplaceText,{"Attribute"})
+in
+    #"Replaced Value1"
