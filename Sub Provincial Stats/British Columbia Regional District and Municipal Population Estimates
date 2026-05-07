@@ -1,0 +1,25 @@
+let
+    Source = Excel.Workbook(Web.Contents("https://www2.gov.bc.ca/assets/gov/data/statistics/people-population-community/population/pop_municipal_subprov_areas.xlsx"), null, false),
+    #"Mun-RD_sheet" = Source{[Item="Mun-RD",Kind="Sheet"]}[Data],
+    FilterNullAndWhitespace = each List.Select(_, each _ <> null and (not (_ is text) or Text.Trim(_) <> "")),
+    #"Removed Bottom Rows" = Table.RemoveLastN(#"Mun-RD_sheet", each try List.IsEmpty(List.Skip(FilterNullAndWhitespace(Record.FieldValues(_)), 1)) otherwise false),
+    #"Removed Top Rows" = Table.Skip(#"Removed Bottom Rows", each try List.IsEmpty(List.Skip(FilterNullAndWhitespace(Record.FieldValues(_)), 1)) otherwise false),
+    #"Removed Other Columns" = Table.SelectColumns(#"Removed Top Rows", List.Select(Table.ColumnNames(#"Removed Top Rows"), each try not List.IsEmpty(FilterNullAndWhitespace(Table.Column(#"Removed Top Rows", _))) otherwise true)),
+    #"Promoted Headers" = Table.PromoteHeaders(#"Removed Other Columns", [PromoteAllScalars=true]),
+    #"Filtered Rows" = Table.SelectRows(#"Promoted Headers", each [Area Type] = "RD" or [Area Type] = "R"),
+    #"Removed Other Columns1" = Table.SelectColumns(#"Filtered Rows",{"2011", "2012", "2013", "2014", "2015", "2016", "2017", "2018", "2019", "2020", "2021", "2022", "2023", "2024", "2025", "Name"}),
+    #"Unpivoted Columns" = Table.UnpivotOtherColumns(#"Removed Other Columns1", {"Name"}, "Year", "Value"),
+    #"Changed Type" = Table.TransformColumnTypes(#"Unpivoted Columns",{{"Value", Int64.Type}, {"Year", Int64.Type}}),
+    #"Renamed Columns" = Table.RenameColumns(#"Changed Type",{{"Name", "CD"}}),
+    #"Renamed Greater Vancouver" = Table.ReplaceValue(#"Renamed Columns","Metro Vancouver","Greater Vancouver",Replacer.ReplaceText,{"CD"}),
+    #"Renamed Powell River" = Table.ReplaceValue(#"Renamed Greater Vancouver","qathet","Powell River",Replacer.ReplaceText,{"CD"}),
+    #"Renamed Stikine" = Table.ReplaceValue(#"Renamed Powell River","Stikine (Census Division)","Stikine",Replacer.ReplaceText,{"CD"}),
+    #"Renamed Northern Rockies" = Table.ReplaceValue(#"Renamed Stikine","Northern Rockies (Census Division)","Northern Rockies",Replacer.ReplaceText,{"CD"}),
+    #"Renames Skeena" = Table.ReplaceValue(#"Renamed Northern Rockies","North Coast","Skeena-Queen Charlotte",Replacer.ReplaceText,{"CD"}),
+    #"Merged with GEO reference table" = Table.NestedJoin(#"Renames Skeena", {"CD"}, CEAG2021_GEO_REF, {"Census Division"}, "CEAG2021_GEO_REF", JoinKind.LeftOuter),
+    #"Expanded CEAG2021_GEO_REF1" = Table.ExpandTableColumn(#"Merged with GEO reference table", "CEAG2021_GEO_REF", {"Census Division", "BC MAF Group"}, {"CEAG2021_GEO_REF.Census Division", "CEAG2021_GEO_REF.BC MAF Group"}),
+    #"Filtered Rows1" = Table.SelectRows(#"Expanded CEAG2021_GEO_REF1", each ([Value] <> 0)),
+    #"Added Suffix" = Table.TransformColumns(#"Filtered Rows1", {{"Year", each Text.From(_, "en-CA") & "-01-01", type text}}),
+    #"Changed Type1" = Table.TransformColumnTypes(#"Added Suffix",{{"Year", type date}})
+in
+    #"Changed Type1"
