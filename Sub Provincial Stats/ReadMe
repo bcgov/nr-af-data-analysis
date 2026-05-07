@@ -1,0 +1,21 @@
+What is it?
+The Sub Provincial Stats is a Sector Intelligence Project that estimates and disseminates agrifood data at a more granular level than BC's provincial total.
+There are 2 currently parts which we plan to merge into 1 output:
+1) Regional Profiles.pbix: visualuzation of census of agriculture and census of population data by Census Division
+2) Sub-Provincial FCR.pbix: combines census of agricutlure data's regional farm operating revenue with annual farm cash receipt to estimate annual regional FCR
+
+Why do we do it?
+Support ministry and other BC Government colleagues for a sense of regional impacts of agriculture in terms of farm revenue. Typicall users include land use planners, regional agrologists and policy analysts.
+
+How do we do it?
+Regional Profiles.pbix: includes 3 queries
+1) CEAG2021_FlatFile - Revenue
+2) Sub-provincial FCR
+3) FCR_Annual_3210004501
+
+
+Take each CCS' share of total operating revenue reported for the year 2020 according to the Census of Agriculture (i.e., Abbotsford is 22.6% of BC total) and applied that to annual FCR estimates. The main assumption and limitation is that share and prices are consistent throughout the years and across CCS' so 2025 estimates are the least reliable. 
+The Census of Agriculture 2026 will provide an update with a question on total operating revenue reported for the year 2025.
+
+
+
