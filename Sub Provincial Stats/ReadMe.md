@@ -45,7 +45,8 @@ where:
     Sub-provincial FCR query for the column called CCS which stands for
     consolidated census subdivision
 
-![](images/clipboard-3331437902.png)
+<img width="950" height="532" alt="image" src="https://github.com/user-attachments/assets/41763032-d3ac-4df4-aec2-68c62ef32752" />
+
 
 Regional Profiles.pbix includes
 
