@@ -1,0 +1,9 @@
+let
+    Source = Csv.Document(Web.Contents("https://www150.statcan.gc.ca/t1/tbl1/en/dtl!downloadDbLoadingData.action?pid=9810059201&latestN=0&startDate=20210101&endDate=20210101&csvLocale=en&selectedMembers=%5B%5B266%2C267%2C268%2C269%2C270%2C271%2C272%2C273%2C274%2C275%2C276%2C277%2C278%2C279%2C280%2C281%2C282%2C283%2C284%2C285%2C286%2C287%2C288%2C289%2C290%2C291%2C292%2C293%2C294%5D%2C%5B1%5D%2C%5B3%5D%2C%5B%5D%2C%5B%5D%2C%5B6%2C7%2C8%2C14%2C15%2C17%2C49%2C50%2C51%2C52%2C53%2C54%2C55%2C56%2C57%2C59%2C60%2C61%5D%2C%5B%5D%5D&checkedLevels=2D1%2C3D1%2C4D1%2C6D1"),[Delimiter=",", Columns=20, Encoding=65001, QuoteStyle=QuoteStyle.None]),
+    #"Promoted Headers" = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),
+    #"Changed Type" = Table.TransformColumnTypes(#"Promoted Headers",{{"REF_DATE", Int64.Type}, {"GEO", type text}, {"DGUID", type text}, {"Statistics (3)", type text}, {"Labour force status (3)", type text}, {"Age (15A)", type text}, {"Gender (3)", type text}, {"Industry - Groups - North American Industry Classification System (NAICS) 2017 (428A)", type text}, {"Class of worker (7A)", type text}, {"UOM", type text}, {"UOM_ID", Int64.Type}, {"SCALAR_FACTOR", type text}, {"SCALAR_ID", Int64.Type}, {"VECTOR", type text}, {"COORDINATE", type text}, {"VALUE", Int64.Type}, {"STATUS", type text}, {"SYMBOL", type text}, {"TERMINATED", type text}, {"DECIMALS", Int64.Type}}),
+    #"Filtered Rows" = Table.SelectRows(#"Changed Type", each ([#"Age (15A)"] = "Total - Age")),
+    #"Removed Other Columns" = Table.SelectColumns(#"Filtered Rows",{"GEO", "Labour force status (3)", "Industry - Groups - North American Industry Classification System (NAICS) 2017 (428A)", "VALUE"}),
+    #"Inserted First Characters" = Table.AddColumn(#"Removed Other Columns", "NAICS4_Code", each Text.Start([#"Industry - Groups - North American Industry Classification System (NAICS) 2017 (428A)"], 4), type text)
+in
+    #"Inserted First Characters"
