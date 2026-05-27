@@ -2,7 +2,13 @@
 by: Leila Bautista (leila.bautista@gov.bc.ca)
 
 What is it?
+
 The BC AF Trade Tool is an agriculture and food-specific tool to view trade data for all Canadian provinces and territories by country and state destination and commodity type using various classification systems.
+
+Why do we do it?
+Allow users to analyze agrifood product domestic export and import value and quantity using administrative information from the Canadian International Merchandise Trade Database.
+
+How do we do it?
 
 There are 2 .rmd files that can be run. They are reliant on reference tables and saving files in the team's Data Library SharePoint for unpublished data: https://bcgov.sharepoint.com/sites/AF-SICI/Raw%20Data/Forms/AllItems.aspx
 
