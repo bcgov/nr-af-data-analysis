@@ -1,8 +1,3 @@
----
-editor_options: 
-  markdown: 
-    wrap: 72
----
 
 **BC AF TRADE TOOL** by: Leila Bautista
 ([leila.bautista\@gov.bc.ca](mailto:leila.bautista@gov.bc.ca){.email})
