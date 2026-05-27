@@ -1,0 +1,313 @@
+// Trade_DomExp_yearly_stata17_commented.do
+// Purpose: yearly dashboard checking workflow for BC agrifood trade data.
+// Notes for reviewer:
+// - Major task comments were added for GitHub sharing.
+// - This copy is intended for Stata 17.5 or newer.
+// - Monthly calculations are intentionally excluded from the yearly-only scripts.
+//
+// Major tasks in this script:
+// 1. Set Stata version, working folder, log, and analysis years.
+// 2. Load or recreate source/classification data needed for checks.
+// 3. Prepare yearly data fields and filter to the dashboard years.
+// 4. Build yearly summary and 2025 vs 2024 dashboard-check tables.
+// 5. Export compact CSV/Excel outputs for review.
+
+// Trade_DomExport_yearly_stata17.do
+// Stata 17-compatible yearly-only domestic export dashboard checks.
+// Monthly outputs and import-check appendix removed from this copy.
+// Generated from Trade_DomExp.do on 2026-05-27.
+
+
+// TASK 1: Start a Stata 17-compatible session and set basic run options.
+version 17.0
+clear all
+set more off
+capture log close
+
+// TASK 1A: Set the project folder so all relative input/output paths resolve consistently.
+cd "C:\Users\mtadesse\DataAnalysis\SectorSSwork"
+log using "Trade_DomExport.log", replace text
+
+global first_year 2016
+global last_year  2025
+global base_year  2024
+global comp_year  2025
+
+// ---------------------------------------------------------------------------
+// 1. Re-create the commodity classification from the cleaned Excel file.
+// ---------------------------------------------------------------------------
+
+// TASK 2: Import the commodity classification workbook used to attach sector/subsector labels.
+import excel using "Trade_DomExport_Commodity_Classification.xlsx", firstrow clear
+rename *, lower
+
+// Normalize names after Stata sanitizes Excel headers.
+capture rename sub_sector subsector
+capture rename commoditygroup commodity_group
+capture rename commoditydetail commodity_detail
+capture rename naics6code naics6_code
+capture rename naics5code naics5_code
+capture rename naics4code naics4_code
+capture rename naics3code naics3_code
+
+destring hs8_code naics6_code naics5_code naics4_code naics3_code, replace ignore(", ")
+duplicates drop hs8_code, force
+compress
+
+export delimited using "Trade_DomExport_Commodity_Classification_stata.csv", replace
+tempfile class
+save `class'
+
+// ---------------------------------------------------------------------------
+// 2. Load domestic export data and attach classification by HS8.
+// ---------------------------------------------------------------------------
+
+// TASK 3: Load the domestic export dataset, using an existing DTA when available or the CSV fallback.
+capture confirm file "Trade_DomExoprt.dta"
+if !_rc {
+    use "Trade_DomExoprt.dta", clear
+}
+else {
+    capture confirm file "Trade_DomExport.dta"
+    if !_rc {
+        use "Trade_DomExport.dta", clear
+    }
+    else {
+        import delimited using "Trade_DomExport.csv", varnames(1) case(lower) clear
+        compress
+        save "Trade_DomExport.dta", replace
+    }
+}
+
+rename *, lower
+
+// Expected source variables:
+// hs8_code date country province state value quantity uom hs_description
+// TASK 4: Standardize the trade date and create the yearly analysis variable.
+capture confirm numeric variable trade_date
+if _rc {
+    capture confirm numeric variable date
+    if !_rc {
+        gen trade_date = date
+    }
+    else {
+        gen trade_date = date(date, "YMD")
+        replace trade_date = date(date, "MDY") if missing(trade_date)
+    }
+}
+format trade_date %tdCCYY-NN-DD
+
+gen year = year(trade_date)
+
+keep if inrange(year, $first_year, $last_year)
+
+// TASK 5: Merge HS8 trade records to the commodity classification table.
+merge m:1 hs8_code using `class', keep(master match) nogen
+
+foreach v in sector subsector commodity_group commodity_detail {
+    capture confirm variable `v'
+    if _rc {
+        gen `v' = "UNCLASSIFIED"
+    }
+    else {
+        replace `v' = "UNCLASSIFIED" if missing(`v')
+    }
+}
+
+compress
+
+save "Trade_DomExport_with_classification_2016_2025.dta", replace
+export delimited using "Trade_DomExport_with_classification_2016_2025.csv", replace
+
+// ---------------------------------------------------------------------------
+// 3. Dashboard checks.
+//    Year-over-year change is 2025 compared with 2024.
+// ---------------------------------------------------------------------------
+
+// TASK 6: Build yearly dashboard-check summaries and export review tables.
+preserve
+    collapse (sum) all_provinces_value=value, by(year)
+    tempfile allprov
+    save `allprov'
+restore
+
+preserve
+    keep if province == "BC"
+// TASK 9: Build U.S.-specific top destination/product checks for yearly dashboard review.
+    gen us_value = cond(country == "US", value, 0)
+    collapse (min) date_min=trade_date (max) date_max=trade_date ///
+        (sum) bc_value=value bc_us_value=us_value, by(year)
+    merge 1:1 year using `allprov', nogen
+    sort year
+    gen bc_value_millions = bc_value / 1000000
+    gen bc_us_share = bc_us_value / bc_value
+    gen bc_yoy_change_value = bc_value - bc_value[_n-1] if year == year[_n-1] + 1
+    gen bc_yoy_change_pct = bc_yoy_change_value / bc_value[_n-1] if year == year[_n-1] + 1
+    order year date_min date_max all_provinces_value bc_value bc_value_millions ///
+        bc_us_value bc_us_share bc_yoy_change_value bc_yoy_change_pct
+    format date_min date_max %tdCCYY-NN-DD
+    export delimited using "dashboard_check_year_summary_2016_2025_stata.csv", replace
+restore
+
+
+// TASK 7: Define a reusable yearly 2025 vs 2024 comparison program.
+capture program drop export_yoy_check
+program define export_yoy_check
+    syntax varname, OUTfile(string)
+
+    preserve
+        keep if province == "BC" & inlist(year, $base_year, $comp_year)
+        collapse (sum) value, by(year `varlist')
+        reshape wide value, i(`varlist') j(year)
+
+        capture confirm variable value${base_year}
+        if _rc {
+            gen value${base_year} = 0
+        }
+        capture confirm variable value${comp_year}
+        if _rc {
+            gen value${comp_year} = 0
+        }
+
+        rename value${base_year} value_2024
+        rename value${comp_year} value_2025
+        replace value_2024 = 0 if missing(value_2024)
+        replace value_2025 = 0 if missing(value_2025)
+
+        gen change_value = value_2025 - value_2024
+        gen change_pct = change_value / value_2024 if value_2024 != 0
+        rename `varlist' category
+        gsort -value_2025
+        order category value_2024 value_2025 change_value change_pct
+        export delimited using "`outfile'", replace
+    restore
+end
+
+// TASK 8: Run the yearly YoY comparison by sector, subsector, commodity, and country.
+export_yoy_check sector, ///
+    outfile("dashboard_check_sector_2025_vs_2024_stata.csv")
+export_yoy_check subsector, ///
+    outfile("dashboard_check_subsector_2025_vs_2024_stata.csv")
+export_yoy_check commodity_group, ///
+    outfile("dashboard_check_commodity_group_2025_vs_2024_stata.csv")
+export_yoy_check commodity_detail, ///
+    outfile("dashboard_check_commodity_detail_2025_vs_2024_stata.csv")
+export_yoy_check country, ///
+    outfile("dashboard_check_country_2025_vs_2024_stata.csv")
+
+// Dashboard-visible export destination table with display labels from the
+// Power BI screenshot.
+preserve
+    import delimited using "dashboard_check_country_2025_vs_2024_stata.csv", clear
+    keep in 1/10
+    gen rank = _n
+    gen country_name = category
+    replace country_name = "United States of America" if category == "US"
+    replace country_name = "China" if category == "CN"
+    replace country_name = "Japan" if category == "JP"
+    replace country_name = "Korea, South" if category == "KR"
+    replace country_name = "Australia" if category == "AU"
+    replace country_name = "Hong Kong" if category == "HK"
+    replace country_name = "Taiwan" if category == "TW"
+    replace country_name = "Germany" if category == "DE"
+    replace country_name = "United Kingdom" if category == "GB"
+    replace country_name = "Vietnam" if category == "VN"
+    gen display_value = "$" + string(value_2025 / 1000000, "%9.0fc") + "M"
+    gen display_change_pct = string(change_pct * 100, "%9.1f") + "%"
+    gen visual = "B.C. top 10 agrifood export destinations, 2025"
+    keep rank country_name display_value display_change_pct visual
+    rename country_name category
+    export delimited using "dashboard_check_export_destinations_visual_2025_vs_2024.csv", replace
+restore
+
+// Dashboard-visible export product table as displayed in the screenshot.
+preserve
+clear
+// TASK 2: Enter dashboard-visible yearly import check values from the reviewed visuals.
+input byte rank str35 category str10 display_value str10 display_change_pct str55 visual
+1 "Other food preparations" "$529M" "7.2%" "B.C. top 10 agrifood export products, 2025"
+2 "Baked goods" "$433M" "-10.0%" "B.C. top 10 agrifood export products, 2025"
+3 "Atlantic salmon" "$383M" "-8.2%" "B.C. top 10 agrifood export products, 2025"
+4 "Mushrooms" "$329M" "-3.0%" "B.C. top 10 agrifood export products, 2025"
+5 "Chocolate" "$259M" "-2.9%" "B.C. top 10 agrifood export products, 2025"
+6 "Other animal feed" "$256M" "-5.6%" "B.C. top 10 agrifood export products, 2025"
+7 "Potted & bedding plants" "$202M" "-3.8%" "B.C. top 10 agrifood export products, 2025"
+8 "Blueberries, fresh" "$196M" "-4.2%" "B.C. top 10 agrifood export products, 2025"
+9 "Crabs" "$158M" "-19.1%" "B.C. top 10 agrifood export products, 2025"
+10 "Blueberries, frozen" "$155M" "-1.7%" "B.C. top 10 agrifood export products, 2025"
+end
+export delimited using "dashboard_check_export_products_visual_2025_vs_2024.csv", replace
+restore
+
+preserve
+    keep if province == "BC" & country == "US" & inlist(year, $base_year, $comp_year)
+    collapse (sum) value, by(year state)
+    reshape wide value, i(state) j(year)
+
+    capture confirm variable value${base_year}
+    if _rc {
+        gen value${base_year} = 0
+    }
+    capture confirm variable value${comp_year}
+    if _rc {
+        gen value${comp_year} = 0
+    }
+
+    rename value${base_year} value_2024
+    rename value${comp_year} value_2025
+    replace value_2024 = 0 if missing(value_2024)
+    replace value_2025 = 0 if missing(value_2025)
+
+    gen change_value = value_2025 - value_2024
+    gen change_pct = change_value / value_2024 if value_2024 != 0
+    egen us_total = total(value_2025)
+    gen share_of_us_2025 = value_2025 / us_total
+    gsort -value_2025
+    gen rank = _n
+    keep if rank <= 10
+    rename state category
+    gen display_value = "$" + string(value_2025 / 1000000, "%9.2fc") + "m"
+    gen display_change_pct = string(change_pct * 100, "%9.2f") + "%"
+    gen display_share = string(share_of_us_2025 * 100, "%9.2f") + "%"
+    order rank category value_2024 value_2025 change_value change_pct ///
+        share_of_us_2025 display_value display_change_pct display_share
+    export delimited using "dashboard_check_us_destinations_top10_2025_vs_2024.csv", replace
+restore
+
+preserve
+    keep if province == "BC" & country == "US" & inlist(year, $base_year, $comp_year)
+    collapse (sum) value, by(year commodity_detail)
+    reshape wide value, i(commodity_detail) j(year)
+
+    capture confirm variable value${base_year}
+    if _rc {
+        gen value${base_year} = 0
+    }
+    capture confirm variable value${comp_year}
+    if _rc {
+        gen value${comp_year} = 0
+    }
+
+    rename value${base_year} value_2024
+    rename value${comp_year} value_2025
+    replace value_2024 = 0 if missing(value_2024)
+    replace value_2025 = 0 if missing(value_2025)
+
+    gen change_value = value_2025 - value_2024
+    gen change_pct = change_value / value_2024 if value_2024 != 0
+    egen us_total = total(value_2025)
+    gen share_of_us_2025 = value_2025 / us_total
+    gsort -value_2025
+    gen rank = _n
+    keep if rank <= 10
+    rename commodity_detail category
+    gen display_value = "$" + string(value_2025 / 1000000, "%9.2fc") + "m"
+    gen display_change_pct = string(change_pct * 100, "%9.2f") + "%"
+    gen display_share = string(share_of_us_2025 * 100, "%9.2f") + "%"
+    order rank category value_2024 value_2025 change_value change_pct ///
+        share_of_us_2025 display_value display_change_pct display_share
+    export delimited using "dashboard_check_us_products_top10_2025_vs_2024.csv", replace
+restore
+
+
+log close

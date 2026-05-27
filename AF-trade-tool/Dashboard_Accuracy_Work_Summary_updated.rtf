@@ -1,0 +1,56 @@
+{\rtf1\ansi\deff0
+{\fonttbl{\f0 Calibri;}}
+\fs24
+\b BC Agrifood Trade Dashboard Accuracy Check Summary\b0\par
+\par
+- Reviewed B.C. agrifood export and import dashboard outputs.\par
+- Checked dashboard values, rankings, year-over-year changes, and summary outputs.\par
+- Compared dashboard visuals against reproduced Stata and Python validation files.\par
+\par
+\b Export data work\b0\par
+- Used Stata and Python to reproduce yearly export dashboard checks for 2016 to 2025.\par
+- Focused the main comparison on 2025 versus 2024.\par
+- Prepared domestic export data and applied the commodity classification.\par
+- Generated yearly summary, sector, subsector, commodity group, commodity detail, and country destination checks.\par
+- Generated U.S.-specific destination and product checks.\par
+- Used Python to assemble export checking outputs into a review workbook.\par
+- Removed monthly calculations from the Stata 17 yearly-only workflow.\par
+\par
+- Export checking files support the dashboard figures reviewed.\par
+- Confirmed consistency for the 2025 B.C. agrifood export total and year-over-year change.\par
+- Confirmed consistency for sector totals, top export destinations, top export products, and U.S.-specific export tables.\par
+- Supporting export files are saved in the Trade_DomExport_Results folder and GitHub staging package.\par
+\par
+\b Import data work\b0\par
+- Used Stata and Python to prepare import dashboard checking outputs.\par
+- Focused on dashboard-visible import source and import product tables.\par
+- Created a summary file for the top import source and top import product shown in the dashboard.\par
+- Used Python to generate the import checking workbook and package final review files.\par
+- Created a Stata 17-compatible yearly import-check script for current use.\par
+\par
+- Import checking files support the dashboard import visuals reviewed.\par
+- Reviewed values, rankings, and displayed year-over-year changes match the dashboard tables checked.\par
+- Supporting import files are saved in the ImportData\\Trade_Import_Results folder and GitHub staging package.\par
+\par
+\b Source and dashboard page review\b0\par
+- Reviewed Agriculture, Secondary Manufacturing, and Seafood dashboard screenshots against datasource notes.\par
+- Created email-ready feedback reports for each sector folder.\par
+- Main Agriculture issue: export visuals appear to use footnote (6), while the datasource list shows exports as source (5).\par
+- Main Secondary Manufacturing issue: source (4), net farm income, appears unrelated and unused on that page.\par
+- Main Seafood issue: source (8) needs clearer documentation because it has no public link or detailed reference.\par
+- Recommended clearer YoY labels and source notes where dashboard visuals mix years or source scopes.\par
+\par
+\b Stata 17 and GitHub package work\b0\par
+- Checked Stata scripts for Stata 17.5 compatibility.\par
+- Created yearly-only Stata 17 scripts for export and import checks.\par
+- Added clearer comments to staged Stata and Python code for GitHub sharing.\par
+- Created a compact GitHub staging folder named Trade_DomExportImport_DB_Checking.\par
+- Included code, GitHub-safe data inputs, documentation, and one combined final-results Excel workbook.\par
+- Large generated trade CSV/DTA files were not copied into the package because they exceed normal GitHub file limits.\par
+\par
+\b Overall conclusion\b0\par
+- Export and import dashboard checks were completed using independent Stata and Python workflows.\par
+- The reviewed dashboard results are consistent with the reproduced validation outputs.\par
+- Sector source-review notes identify a few source-label and footnote issues to correct before final sharing.\par
+- The final checking workbooks, sector review notes, and GitHub staging package provide the current audit trail.\par
+}

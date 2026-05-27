@@ -1,0 +1,104 @@
+from __future__ import annotations
+
+import csv
+from pathlib import Path
+
+
+OUT_DIR = Path(r"C:\Users\mtadesse\DataAnalysis\SectorSSwork\ImportData")
+
+
+def write_csv(name: str, rows: list[dict]) -> None:
+    OUT_DIR.mkdir(exist_ok=True)
+    with (OUT_DIR / name).open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def main() -> None:
+    # These values reproduce the import visuals in the current screenshot.
+    # The screenshot shows those visuals using Trade_DomExp-style dashboard
+    # values, so this file is a visual check, not a raw Trade_Import.csv total.
+    source_rows = [
+        (1, "United States of America", "$4,289M", "-3.8%"),
+        (2, "China", "$330M", "-19.9%"),
+        (3, "Japan", "$309M", "16.4%"),
+        (4, "Korea, South", "$153M", "26.2%"),
+        (5, "Australia", "$79M", "9.2%"),
+        (6, "Hong Kong", "$75M", "15.2%"),
+        (7, "Taiwan", "$59M", "20.5%"),
+        (8, "Germany", "$52M", "121.2%"),
+        (9, "United Kingdom", "$48M", "84.8%"),
+        (10, "Vietnam", "$43M", "9.7%"),
+    ]
+    product_rows = [
+        (1, "Other food preparations", "$529M", "7.2%"),
+        (2, "Baked goods", "$433M", "-10.0%"),
+        (3, "Atlantic salmon", "$383M", "-8.2%"),
+        (4, "Mushrooms", "$329M", "-3.0%"),
+        (5, "Chocolate", "$259M", "-2.9%"),
+        (6, "Other animal feed", "$256M", "-5.6%"),
+        (7, "Potted & bedding plants", "$202M", "-3.8%"),
+        (8, "Blueberries, fresh", "$196M", "-4.2%"),
+        (9, "Crabs", "$158M", "-19.1%"),
+        (10, "Blueberries, frozen", "$155M", "-1.7%"),
+    ]
+
+    source_file = "dashboard_check_import_country_top10_2025_vs_2024.csv"
+    product_file = "dashboard_check_import_products_top10_2025_vs_2024.csv"
+    write_csv(
+        source_file,
+        [
+            {
+                "rank": rank,
+                "category": category,
+                "display_value": value,
+                "display_change_pct": change,
+                "visual": "B.C. top 10 agrifood Import sources 2025",
+            }
+            for rank, category, value, change in source_rows
+        ],
+    )
+    write_csv(
+        product_file,
+        [
+            {
+                "rank": rank,
+                "category": category,
+                "display_value": value,
+                "display_change_pct": change,
+                "visual": "B.C. top 10 agrifood Import products 2025",
+            }
+            for rank, category, value, change in product_rows
+        ],
+    )
+    write_csv(
+        "dashboard_check_import_summary_2025.csv",
+        [
+            {
+                "metric": "Top import product",
+                "category": product_rows[0][1],
+                "display_value": product_rows[0][2],
+                "display_change_pct": product_rows[0][3],
+                "source": product_file,
+            },
+            {
+                "metric": "Top import source",
+                "category": source_rows[0][1],
+                "display_value": source_rows[0][2],
+                "display_change_pct": source_rows[0][3],
+                "source": source_file,
+            },
+            {
+                "metric": "Dashboard note",
+                "category": "Import visuals in screenshot use Trade_DomExp-style values",
+                "display_value": "",
+                "display_change_pct": "",
+                "source": "Screenshot 2026-05-15 144135.png",
+            },
+        ],
+    )
+
+
+if __name__ == "__main__":
+    main()
