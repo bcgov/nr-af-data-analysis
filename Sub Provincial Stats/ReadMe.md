@@ -1,9 +1,9 @@
 
-**BC Sub Provincial Stats**
+**BC SUB PROVINCIAL STATS**
 
 by: Leila Bautista (leila.bautista@gov.bc.ca)
 
-**What is it?**
+**WHAT is it?**
 
 The Sub Provincial Stats is a Sector Intelligence Project that estimates
 and disseminates agrifood data at a more granular level than BC's
@@ -14,13 +14,13 @@ receipt to estimate annual regional FCR 2) Regional Profiles.pbix:
 visualuzation of census of agriculture and census of population data by
 Census Division
 
-**Why do we do it?**
+**WHY do we do it?**
 
 Support ministry and other BC Government colleagues for a sense of
 regional impacts of agriculture in terms of farm revenue. Typicall users
 include land use planners, regional agrologists and policy analysts.
 
-**How do we do it?**
+**HOW do we do it?**
 
 For each part, there is a working .pbix file with queries (in M) to load
 and transform the data. The SSOT of those codes and queries are in this
