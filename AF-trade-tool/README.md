@@ -9,7 +9,7 @@ systems.
 
 There are **two Rmarkdown** (.rmd) files that can be run. They are
 reliant on reference tables and saving files in the team's Data Library
-SharePoint for unpublished data:
+SharePoint for internal use data:
 <https://bcgov.sharepoint.com/sites/AF-SICI/Raw%20Data/Forms/AllItems.aspx>
 
 1.  [**BC_AF_Trade_Tool_Build.Rmd**](https://github.com/bcgov/nr-af-data-analysis/blob/main/AF-trade-tool/BC_AF_Trade_Tool_Build.Rmd)
