@@ -2,29 +2,29 @@
 **BC AF TRADE TOOL** by: Leila Bautista
 ([leila.bautista\@gov.bc.ca](mailto:leila.bautista@gov.bc.ca){.email})
 
-The BC AF Trade Tool is an agriculture and food-specific tool to view
-trade data for all Canadian provinces and territories by country and
-state destination and commodity type using various classification
-systems.
+**WHAT is it?**
 
-There are **two Rmarkdown** (.rmd) files that can be run. They are
-reliant on reference tables and saving files in the team's Data Library
+The BC AF Trade Tool is an agriculture and food-specific tool to view trade data for all Canadian provinces and territories by country and
+state destination and commodity type using various classification systems.
+
+**WHY do we do it?**
+While the data is publicly available via the Canadian International Merchandise Trade Application, only one  HS8 and HS10 codes can be pulled at a time. The HS codes are not always intuitive and could benefit from plain language equivalents as well as some aggregation. The Trade Tool facilitates that and this .rmd is the first step before the cleaned data is disseminated via PowerBI.
+
+**HOW do we do it?**
+
+There are **two Rmarkdown** (.rmd) files that can be run. They are reliant on reference tables and saving files in the team's Data Library
 SharePoint for internal use data:
 <https://bcgov.sharepoint.com/sites/AF-SICI/Raw%20Data/Forms/AllItems.aspx>
 
 1.  [**BC_AF_Trade_Tool_Build.Rmd**](https://github.com/bcgov/nr-af-data-analysis/blob/main/AF-trade-tool/BC_AF_Trade_Tool_Build.Rmd)
-    which will build **Trade_DomExport.csv** and **Trade_Import.csv**
-    for the years specified in the loop and save into the Unpublished
+    which will build **Trade_DomExport.csv** and **Trade_Import.csv** for the years specified in the loop and save into the Unpublished
     Data Library on SharePoint.
 2.  [BC_AF_Trade_Tool_Update.Rmd](https://github.com/bcgov/nr-af-data-analysis/blob/main/AF-trade-tool/BC_AF_Trade_Tool_Update.Rmd)
-    which will read the existing T**rade_DomExport.csv** and
-    **Trade_Import.csv** in the Unpublished Data Library on SharePoint
-    and reads a specified year (usually most recent like 2026) and
-    appends that into the timeseries data and write over the
+    which will read the existing T**rade_DomExport.csv** and **Trade_Import.csv** in the Unpublished Data Library on SharePoint
+    and reads a specified year (usually most recent like 2026) and appends that into the timeseries data and write over the
     corresponding files.
 
-To visualize and apply plain language to the data, reference tables
-(e.g., **Commodity_Classification.csv**) and relationships to the
+To visualize and apply plain language to the data, reference tables (e.g., **Commodity_Classification.csv**) and relationships to the
 [**Trade_DomExport.csv**](https://bcgov.sharepoint.com/sites/AF-SICI/Raw%20Data/Trade_DomExport.csv)
 and
 [**Trade_Import.csv**](https://bcgov.sharepoint.com/sites/AF-SICI/Raw%20Data/Trade_Import.csv)
