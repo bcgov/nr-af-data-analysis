@@ -8,6 +8,7 @@ The BC AF Trade Tool is an agriculture and food-specific tool to view trade data
 state destination and commodity type using various classification systems.
 
 **WHY do we do it?**
+
 While the data is publicly available via the Canadian International Merchandise Trade Application, only one  HS8 and HS10 codes can be pulled at a time. The HS codes are not always intuitive and could benefit from plain language equivalents as well as some aggregation. The Trade Tool facilitates that and this .rmd is the first step before the cleaned data is disseminated via PowerBI.
 
 **HOW do we do it?**
