@@ -1,9 +1,9 @@
+
 // FarmFood_counts.do
 // Purpose: Reproduce BC-level farm-count estimates and food/beverage processor
 //          and related business-count totals from approved project sources.
 // Original validated program: July 14, 2026
 // GitHub-ready path cleanup: August 14, 2026
-// Author: Million tadesse (million.tadesse@gov.bc.ca)
 // Main outputs\:
 //   1. farm_estimates_2017_2024_stata.csv
 //   2. farm_estimates_2018_2024_stata.csv
@@ -24,7 +24,7 @@ clear all
 set more off
 capture log close
 
-// Set the project root without storing a personal workstation path in source
+// Set the project root without storing a user-specific absolute path in source
 // control. By default, the program uses Stata's current working directory.
 // An optional project root can be supplied when running the program:
 //   do "Stata/FarmFood_counts.do" "C:/approved/project/location"
@@ -49,7 +49,7 @@ log using "outputs\04_quality_checks_logs\FarmFood_counts_run.log", replace text
 // Source concept:
 //   - Census of Agriculture 2021 gives the benchmark level: 15,841 BC farms.
 //   - ATDP gives annual movement: 2017-2024 
-//   - There is no 2025 ATDP farm-count value at this time.
+//   - The validated ATDP farm-count series used here ends in 2024.
 //
 // Method:
 //   Estimated farms in year t = (Census 2021 farms / ATDP 2021 farms) * ATDP_t
@@ -159,8 +159,8 @@ save `farm_estimates', replace
 //
 // Reporting period:
 //   - December records for 2021-2025.
-//   - 2025 is available for business counts even though 2025 ATDP farm counts
-//     are not available in the current files.
+//   - 2025 is available for business counts; the validated ATDP farm-count
+//     series used for this analysis ends in 2024.
 //
 // Sector mapping:
 //   - Agriculture (excl. aquaculture)
@@ -179,8 +179,8 @@ clear
 
 cd `"`project_root'"'
 
-// Import the local BC Stats source workbook. The prompt identifies this as the
-// key source for processor and related business counts.
+// Import the approved BC Stats source workbook used for processor and related
+// business counts.
 import excel using "Ag_and_Food_Business_Counts.xlsx", sheet("DATA") firstrow clear
 rename *, lower
 
@@ -585,7 +585,7 @@ putexcel A1 = "Item" B1 = "Value" C1 = "Note"
 putexcel A2 = "Census 2021 farms" B2 = `census_2021' C2 = "Census of Agriculture anchor"
 putexcel A3 = "ATDP 2021 farms" B3 = `atdp_2021' C3 = "ATDP annual movement indicator"
 putexcel A4 = "Benchmark ratio" B4 = formula("B2/B3") C4 = "Census 2021 / ATDP 2021"
-putexcel A5 = "Farm ATDP coverage years" B5 = "2017-2024" C5 = "No 2025 ATDP farm-count value in current files"
+putexcel A5 = "Farm ATDP coverage years" B5 = "2017-2024" C5 = "Validated ATDP source series ends in 2024"
 putexcel A6 = "Business-count source years" B6 = "2021-2025" C6 = "December BC Stats business counts"
 
 putexcel set "outputs\04_quality_checks_logs\farm_food_counts_results_stata_putexcel_QA.xlsx", modify sheet("Farm formulas")
