@@ -1,9 +1,9 @@
-
 // FarmFood_counts.do
 // Purpose: Reproduce BC-level farm-count estimates and food/beverage processor
 //          and related business-count totals from approved project sources.
 // Original validated program: July 14, 2026
 // GitHub-ready path cleanup: August 14, 2026
+// Author: Million Tadesse, million.tadesse@gov.bc.ca
 // Main outputs\:
 //   1. farm_estimates_2017_2024_stata.csv
 //   2. farm_estimates_2018_2024_stata.csv
