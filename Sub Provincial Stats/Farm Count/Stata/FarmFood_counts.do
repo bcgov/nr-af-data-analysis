@@ -1,0 +1,1944 @@
+
+// FarmFood_counts.do
+// Purpose: Reproduce BC-level farm-count estimates and food/beverage processor
+//          and related business-count totals from approved project sources.
+// Original validated program: July 14, 2026
+// GitHub-ready path cleanup: August 14, 2026
+// Main outputs\:
+//   1. farm_estimates_2017_2024_stata.csv
+//   2. farm_estimates_2018_2024_stata.csv
+//   3. bc_business_processor_counts_2021_2025_stata.csv
+//   4. bc_business_processor_counts_2021_2025_stata.xlsx
+//   5. business_count_unmapped_rows_2021_2025_stata.csv
+//
+// Important concept note:
+//   - Farm counts and business counts are different measures.
+//   - Farm estimates use Census of Agriculture + ATDP.
+//   - Food/beverage processor and related business counts use BC Stats
+//     business-count records by NAICS and employee-size group.
+//   - Do not add these measures together unless a separate combined measure is
+//     defined and documented.
+
+version 17.0
+clear all
+set more off
+capture log close
+
+// Set the project root without storing a personal workstation path in source
+// control. By default, the program uses Stata's current working directory.
+// An optional project root can be supplied when running the program:
+//   do "Stata/FarmFood_counts.do" "C:/approved/project/location"
+args project_root
+if `"`project_root'"' == "" local project_root "`c(pwd)'"
+local project_root = subinstr(`"`project_root'"', "\", "/", .)
+cd `"`project_root'"'
+
+// All input and output paths below are relative to the project root.
+capture mkdir "outputs"
+capture mkdir "outputs\00_final_farm_count"
+capture mkdir "outputs\01_business_counts"
+capture mkdir "outputs\02_region_type_outputs"
+capture mkdir "outputs\03_documentation"
+capture mkdir "outputs\04_quality_checks_logs"
+capture mkdir "outputs\99_previous_outputs"
+log using "outputs\04_quality_checks_logs\FarmFood_counts_run.log", replace text
+
+// ===========================================================================
+// PART 1. FARM-COUNT ESTIMATION
+// ===========================================================================
+// Source concept:
+//   - Census of Agriculture 2021 gives the benchmark level: 15,841 BC farms.
+//   - ATDP gives annual movement: 2017-2024 
+//   - There is no 2025 ATDP farm-count value at this time.
+//
+// Method:
+//   Estimated farms in year t = (Census 2021 farms / ATDP 2021 farms) * ATDP_t
+//
+// Why this method:
+//   - ATDP is annual, so it is useful for year-to-year movement.
+//   - ATDP is not level-equivalent to the Census farm concept.
+//   - Benchmarking to 2021 Census keeps the series at the Census level while
+//     preserving ATDP movement.
+//
+// Treatment of farms below $10,000 revenue:
+//   -  Here this is calculated as:
+//       estimated total farms - ATDP farms
+// ===========================================================================
+
+clear
+
+// ATDP values below come from the Inputs tab in:
+// Example_extrapolation\20260223-Number of farms in BC.xlsx
+// These are entered directly so the do-file can run without depending on
+// external Excel parsing for the farm section.
+//
+// Cross-check:
+// STC data_Number of farms reporting.csv contains a StatCan-style ATDP extract
+// for BC, all farm types, all revenue classes, farms reporting, number of farms.
+// It matches the ATDP/workbook inputs for 2017-2021 and 2023.
+// Differences are small: 2022 STC=9,695 vs input=9,700;
+// 2024 STC=9,560 vs input=9,550.
+// Current estimates use the workbook/ATDP input values below.
+input year atdp_number_of_farms
+2017 9255
+2018 9195
+2019 8955
+2020 9265
+2021 9400
+2022 9700
+2023 9735
+2024 9550
+end
+
+// 2021 Census benchmark from:
+// Example_extrapolation\Cennsus 2016 and 2021_number of farms.xlsx
+local census_2021 = 15841
+
+// Pull the ATDP value for 2021 from the input table. This avoids hard-coding the
+// denominator in the formula and makes the benchmark ratio easy to audit.
+quietly summarize atdp_number_of_farms if year == 2021, meanonly
+local atdp_2021 = r(mean)
+local benchmark_ratio = `census_2021' / `atdp_2021'
+
+// Sort by year before calculating growth rates. Growth is reported for review;
+// it is not a separate modeling assumption beyond ATDP movement.
+sort year
+gen atdp_growth_rate = atdp_number_of_farms / atdp_number_of_farms[_n-1] - 1 if _n > 1
+label variable atdp_growth_rate "ATDP annual growth rate"
+
+// Apply the proportional benchmark formula.
+
+gen bench_ratio_census2021_atdp2021 = `benchmark_ratio'
+label variable bench_ratio_census2021_atdp2021 "Census 2021 / ATDP 2021"
+
+gen est_farms_bc_unrounded = atdp_number_of_farms * bench_ratio_census2021_atdp2021
+label variable est_farms_bc_unrounded "Benchmarked farm estimate before rounding"
+
+gen estimated_number_of_farms_bc = round(est_farms_bc_unrounded)
+label variable estimated_number_of_farms_bc "Benchmarked estimated number of BC farms"
+
+// Difference between the benchmarked total and the ATDP count. This is the
+// operational adjustment for farms not represented in the ATDP count, including
+// farms below the $10,000 revenue threshold.
+gen assumed_farms_revenue_below_10k = estimated_number_of_farms_bc - atdp_number_of_farms
+label variable assumed_farms_revenue_below_10k "Estimated farms not captured in ATDP count"
+
+// Shares are included for QA and explanation in the workbook/memo.
+gen atdp_coverage_share_of_estimate = atdp_number_of_farms / estimated_number_of_farms_bc
+label variable atdp_coverage_share_of_estimate "ATDP count as share of benchmarked estimate"
+
+gen below_10k_share_of_estimate = assumed_farms_revenue_below_10k / estimated_number_of_farms_bc
+label variable below_10k_share_of_estimate "Implied non-ATDP share of benchmarked estimate"
+
+order year atdp_number_of_farms atdp_growth_rate bench_ratio_census2021_atdp2021 ///
+    est_farms_bc_unrounded estimated_number_of_farms_bc ///
+    assumed_farms_revenue_below_10k atdp_coverage_share_of_estimate ///
+    below_10k_share_of_estimate
+
+// Save the full ATDP-supported series and the main reporting period.
+export delimited using "outputs\00_final_farm_count\farm_estimates_2017_2024_stata.csv", replace
+preserve
+    keep if inrange(year, 2018, 2024)
+    export delimited using "outputs\00_final_farm_count\farm_estimates_2018_2024_stata.csv", replace
+restore
+
+tempfile farm_estimates
+save `farm_estimates', replace
+
+// ===========================================================================
+// PART 2. FOOD/BEVERAGE PROCESSOR AND RELATED BUSINESS COUNTS
+//Start are regional level and roll up to BC level later
+// ===========================================================================
+// Source file:
+//   Ag_and_Food_Business_Counts.xlsx, sheet DATA
+//
+// Source concept:
+//   - BC Stats business counts by regional district, NAICS, date, and
+//     employee-size group.
+//   - This is a business/operator count source, not a Census/ATDP farm count.
+//
+// Reporting period:
+//   - December records for 2021-2025.
+//   - 2025 is available for business counts even though 2025 ATDP farm counts
+//     are not available in the current files.
+//
+// Sector mapping:
+//   - Agriculture (excl. aquaculture)
+//   - Seafood & fisheries
+//   - Secondary food/beverage manufacturing (excl. seafood)
+//
+// Employee-size groups:
+//   - 0 employees
+//   - 1 to 9 employees
+//   - 10 to 49 employees
+//   - 50+ employees
+//   - Total
+// ===========================================================================
+
+clear
+
+cd `"`project_root'"'
+
+// Import the local BC Stats source workbook. The prompt identifies this as the
+// key source for processor and related business counts.
+import excel using "Ag_and_Food_Business_Counts.xlsx", sheet("DATA") firstrow clear
+rename *, lower
+
+// Standardize variable names used later in the script. capture keeps the script
+// runnable if a future workbook already uses the target names.
+capture rename countofop_id business_count
+capture rename cdname census_division
+capture rename unifiednaics6 unified_naics6
+
+// Convert the source DATE field into year/month. The existing workbook stores
+// DATE as an Excel daily date. The alternate branch handles text month-year
+// dates if the source format changes later.
+capture confirm numeric variable date
+if !_rc {
+    gen double source_date = cond(date > 30000, date + td(30dec1899), date)
+    gen source_year = year(source_date)
+    gen source_month = month(source_date)
+}
+else {
+    gen double source_month_date = monthly(date, "MY")
+    gen source_year = year(dofm(source_month_date))
+    gen source_month = month(dofm(source_month_date))
+}
+
+// Convert NAICS to a six-character string so it can be matched against the
+// project NAICS6 sector lists.
+capture confirm numeric variable naics
+if _rc {
+    gen str6 naics6 = substr(strtrim(naics), 1, 6)
+}
+else {
+    gen str6 naics6 = string(naics, "%06.0f")
+}
+
+// Ensure business counts are numeric before collapsing.
+destring business_count, replace ignore(", ")
+
+// Use December snapshots only. This matches the prior dashboard-checking logic
+// and avoids mixing June and December counts within a year.
+keep if inrange(source_year, 2021, 2025) & source_month == 12
+
+// NAICS6 mapping lists. These mirror business_count_sector_naics_mapping.csv.
+// Keeping them in the do-file makes the Stata output reproducible without
+// requiring merge logic. Review unmapped output before expanding these lists.
+local ag_codes "|111110|111120|111130|111140|111150|111160|111190|111211|111219|111320|111330|111411|111412|111419|111421|111422|111910|111940|111993|111994|111995|111999|112110|112120|112210|112310|112320|112330|112340|112391|112399|112410|112420|112910|112920|112930|112991|112999|115110|115210|"
+// Seafood preparation/packaging is NAICS 311710. Fruit and vegetable
+// preserving (311410/311420) belongs in secondary food manufacturing.
+// Tobacco (312220), leather (316110), fertilizer (325313/325314), and
+// pesticides (325320) are excluded because this reporting group is limited to
+// food and beverage manufacturing.
+local seafood_codes "|112510|114113|114114|311710|"
+local secmanuf_codes "|311111|311119|311211|311214|311224|311225|311230|311310|311340|311351|311352|311410|311420|311511|311515|311520|311614|311615|311616|311617|311619|311811|311814|311821|311824|311830|311911|311919|311920|311930|311940|311990|312110|312120|312130|312140|"
+
+// Assign each row to one reporting sector based on NAICS6.
+gen str65 sector = ""
+replace sector = "Agriculture (excl. aquaculture)" if strpos("`ag_codes'", "|" + naics6 + "|") > 0
+replace sector = "Seafood & fisheries" if strpos("`seafood_codes'", "|" + naics6 + "|") > 0
+replace sector = "Secondary food/beverage manufacturing (excl. seafood)" if strpos("`secmanuf_codes'", "|" + naics6 + "|") > 0
+
+// Collapse detailed BC Stats employee-size labels into the reporting groups.
+gen str20 employee_group = ""
+replace employee_group = "0 employees" if empsize == "No Employees"
+replace employee_group = "1 to 9 employees" if inlist(empsize, "1 to 4", "5 to 9")
+replace employee_group = "10 to 49 employees" if inlist(empsize, "10 to 19", "20 to 29", "30 to 49")
+replace employee_group = "50+ employees" if ///
+    inlist(empsize, "50 to 99", "100 to 149", "150 to 199", "200 to 249", "250 to 299") | ///
+    inlist(empsize, "300 to 399", "400 to 499", "500 to 999", "1,000 to 1,499", "1,500 to 1,999") | ///
+    inlist(empsize, "2,000 to 2,499", "2,500 to 2,999", "3,000 to 3,999", "5,000 and over")
+
+// Standardize historical regional-district names before any aggregation.
+replace census_division = "Metro Vancouver" if census_division == "Greater Vancouver"
+replace census_division = "qathet" if census_division == "Powell River"
+replace census_division = "North Coast" if census_division == "Skeena-Queen Charlotte"
+
+// Short IDs are used only for reshaping broad sectors into columns.
+gen str30 sector_id = ""
+replace sector_id = "agriculture" if sector == "Agriculture (excl. aquaculture)"
+replace sector_id = "seafood_fisheries" if sector == "Seafood & fisheries"
+replace sector_id = "food_beverage" if sector == "Secondary food/beverage manufacturing (excl. seafood)"
+
+// A processor classification is added to the same regional base records.
+// Primary agriculture, aquaculture, and fishing retain their broad sector but
+// have no processor type. Selected manufacturing rows receive a NAICS4 type.
+gen str4 processor_naics4 = ""
+replace processor_naics4 = substr(naics6, 1, 4) ///
+    if strpos("`secmanuf_codes'", "|" + naics6 + "|") > 0 | naics6 == "311710"
+gen str80 processor_type = ""
+replace processor_type = "Animal food manufacturing" if processor_naics4 == "3111"
+replace processor_type = "Grain and oilseed milling" if processor_naics4 == "3112"
+replace processor_type = "Sugar and confectionery product manufacturing" if processor_naics4 == "3113"
+replace processor_type = "Fruit and vegetable preserving and specialty food manufacturing" if processor_naics4 == "3114"
+replace processor_type = "Dairy product manufacturing" if processor_naics4 == "3115"
+replace processor_type = "Meat product manufacturing" if processor_naics4 == "3116"
+replace processor_type = "Seafood product preparation and packaging" if processor_naics4 == "3117"
+replace processor_type = "Bakeries and tortilla manufacturing" if processor_naics4 == "3118"
+replace processor_type = "Other food manufacturing" if processor_naics4 == "3119"
+replace processor_type = "Beverage manufacturing" if processor_naics4 == "3121"
+
+tempfile bc_source_mapped
+save `bc_source_mapped', replace
+
+// Export unmapped rows. This is a QA file, not a reporting table. It shows
+// NAICS or employee-size labels that were excluded from the mapped totals.
+preserve
+    keep if sector == "" | employee_group == ""
+    collapse (sum) business_count, by(source_year naics6 unified_naics6 empsize sector employee_group)
+    export delimited using "outputs\04_quality_checks_logs\business_count_unmapped_rows_2021_2025_stata.csv", replace
+restore
+
+// Keep only mapped records for the reporting totals.
+keep if sector != "" & employee_group != ""
+
+// Regional-first design: retain region in the first aggregation. BC totals are
+// calculated below by summing these regional records, including Unknown Location.
+collapse (sum) business_count, by(source_year census_division sector sector_id employee_group)
+tempfile regional_broad_detail
+save `regional_broad_detail', replace
+
+// Derive the BC broad-sector totals from the regional base.
+collapse (sum) bcstats_source_value=business_count, by(source_year sector employee_group)
+rename source_year year
+
+tempfile business_detail
+save `business_detail', replace
+
+// Add Total rows across employee-size groups for each sector/year.
+preserve
+    collapse (sum) bcstats_source_value, by(year sector)
+    gen str20 employee_group = "Total"
+    append using `business_detail'
+
+    // Sort employee-size groups in a readable order for CSV/Excel output.
+    gen byte employee_sort = .
+    replace employee_sort = 1 if employee_group == "0 employees"
+    replace employee_sort = 2 if employee_group == "1 to 9 employees"
+    replace employee_sort = 3 if employee_group == "10 to 49 employees"
+    replace employee_sort = 4 if employee_group == "50+ employees"
+    replace employee_sort = 5 if employee_group == "Total"
+    sort year sector employee_sort
+    order year sector employee_group bcstats_source_value
+    drop employee_sort
+
+    export delimited using "outputs\01_business_counts\bc_business_processor_counts_2021_2025_stata.csv", replace
+    export excel using "outputs\01_business_counts\bc_business_processor_counts_2021_2025_stata.xlsx", ///
+        sheet("BC_business_counts") firstrow(variables) replace
+restore
+
+// Regional broad-sector long sheet, including employee-size detail and totals.
+use `regional_broad_detail', clear
+preserve
+    collapse (sum) business_count, by(source_year census_division sector sector_id)
+    gen str20 employee_group = "Total"
+    append using `regional_broad_detail'
+    sort source_year census_division sector_id employee_group
+    order source_year census_division sector sector_id employee_group business_count
+    label variable source_year "Year"
+    label variable census_division "Regional district"
+    label variable sector "Broad project sector"
+    label variable sector_id "Broad sector ID"
+    label variable employee_group "Employee-size group"
+    label variable business_count "Business count"
+    export excel using "outputs\01_business_counts\bc_business_processor_counts_2021_2025_stata.xlsx", ///
+        sheet("Regional_Broad_Long", replace) firstrow(varlabels)
+restore
+
+// Regional broad-sector wide sheet: total counts by year and region.
+collapse (sum) business_count, by(source_year census_division sector_id)
+reshape wide business_count, i(source_year census_division) j(sector_id) string
+rename business_count* broad_*
+order source_year census_division broad_*
+sort source_year census_division
+label variable source_year "Year"
+label variable census_division "Regional district"
+capture label variable broad_agriculture "Agriculture (excl. aquaculture)"
+capture label variable broad_seafood_fisheries "Seafood & fisheries"
+capture label variable broad_food_beverage "Secondary food/beverage manufacturing (excl. seafood)"
+export excel using "outputs\01_business_counts\bc_business_processor_counts_2021_2025_stata.xlsx", ///
+    sheet("Regional_Broad_Wide", replace) firstrow(varlabels)
+
+// ===========================================================================
+// PART 2B. REGIONAL PROCESSOR COUNTS BY NAICS4
+// Direct observed BC Stats counts; no Census/ATDP benchmarking is applied.
+// This block adds three sheets to the same Stata business-count workbook used
+// above: Regional_Processor_Long, Regional_Processor_Wide, and
+// Regional_Processor_Method.
+// ===========================================================================
+
+use `bc_source_mapped', clear
+
+// Processor fields were assigned in the common regional base above. Primary
+// agriculture, aquaculture, and fishing have broad sectors but no processor type.
+keep if processor_type != "" & employee_group != ""
+
+count if processor_type == ""
+if r(N) > 0 {
+    display as error "Unmapped processor NAICS4 codes found. Update the crosswalk."
+    list naics6 unified_naics6 if processor_type == "", noobs abbreviate(40)
+    exit 459
+}
+
+// Unknown Location is retained for reconciliation and is not allocated.
+collapse (sum) business_count, by(source_year census_division processor_naics4 processor_type employee_group)
+tempfile regional_processor_detail
+save `regional_processor_detail', replace
+
+// Long sheet: employee-size detail plus a Total row for each processor type.
+preserve
+    collapse (sum) business_count, by(source_year census_division processor_naics4 processor_type)
+    gen str20 employee_group = "Total"
+    append using `regional_processor_detail'
+    gen byte employee_sort = .
+    replace employee_sort = 1 if employee_group == "0 employees"
+    replace employee_sort = 2 if employee_group == "1 to 9 employees"
+    replace employee_sort = 3 if employee_group == "10 to 49 employees"
+    replace employee_sort = 4 if employee_group == "50+ employees"
+    replace employee_sort = 5 if employee_group == "Total"
+    sort source_year census_division processor_naics4 employee_sort
+    order source_year census_division processor_naics4 processor_type employee_group business_count
+    drop employee_sort
+    label variable source_year "Year"
+    label variable census_division "Regional district"
+    label variable processor_naics4 "NAICS4"
+    label variable processor_type "Processor type"
+    label variable employee_group "Employee-size group"
+    label variable business_count "Business count"
+    export excel using "outputs\01_business_counts\bc_business_processor_counts_2021_2025_stata.xlsx", ///
+        sheet("Regional_Processor_Long", replace) firstrow(varlabels)
+restore
+
+// Wide sheet: total counts by year, region, and NAICS4 processor type.
+use `regional_processor_detail', clear
+collapse (sum) business_count, by(source_year census_division processor_naics4)
+reshape wide business_count, i(source_year census_division) j(processor_naics4) string
+rename business_count* processor_*
+order source_year census_division processor_*
+sort source_year census_division
+label variable source_year "Year"
+label variable census_division "Regional district"
+capture label variable processor_3111 "Animal food manufacturing [3111]"
+capture label variable processor_3112 "Grain and oilseed milling [3112]"
+capture label variable processor_3113 "Sugar and confectionery manufacturing [3113]"
+capture label variable processor_3114 "Fruit and vegetable preserving [3114]"
+capture label variable processor_3115 "Dairy product manufacturing [3115]"
+capture label variable processor_3116 "Meat product manufacturing [3116]"
+capture label variable processor_3117 "Seafood preparation and packaging [3117]"
+capture label variable processor_3118 "Bakeries and tortilla manufacturing [3118]"
+capture label variable processor_3119 "Other food manufacturing [3119]"
+capture label variable processor_3121 "Beverage manufacturing [3121]"
+export excel using "outputs\01_business_counts\bc_business_processor_counts_2021_2025_stata.xlsx", ///
+    sheet("Regional_Processor_Wide", replace) firstrow(varlabels)
+
+// BC processor totals are derived by summing the regional processor records.
+use `regional_processor_detail', clear
+collapse (sum) business_count, by(source_year processor_naics4 processor_type employee_group)
+tempfile bc_processor_detail
+save `bc_processor_detail', replace
+preserve
+    collapse (sum) business_count, by(source_year processor_naics4 processor_type)
+    gen str20 employee_group = "Total"
+    append using `bc_processor_detail'
+    sort source_year processor_naics4 employee_group
+    order source_year processor_naics4 processor_type employee_group business_count
+    label variable source_year "Year"
+    label variable processor_naics4 "NAICS4"
+    label variable processor_type "Processor type"
+    label variable employee_group "Employee-size group"
+    label variable business_count "BC business count"
+    export excel using "outputs\01_business_counts\bc_business_processor_counts_2021_2025_stata.xlsx", ///
+        sheet("BC_Processor", replace) firstrow(varlabels)
+restore
+
+// Method sheet in the same workbook.
+clear
+set obs 10
+gen str35 item = ""
+gen str244 note = ""
+replace item = "Purpose" in 1
+replace note = "One regional-first workflow for broad project sectors and NAICS4 processor types." in 1
+replace item = "Period" in 2
+replace note = "December snapshots, 2021 to 2025." in 2
+replace item = "Method" in 3
+replace note = "Clean and classify detailed records once, aggregate first by region, then sum regional results to BC." in 3
+replace item = "Not benchmarking" in 4
+replace note = "The source contains regional observations; no Census or movement-factor benchmarking is used." in 4
+replace item = "Broad sectors" in 5
+replace note = "Project-defined groups built from selected NAICS6 codes: agriculture, seafood/fisheries, and secondary food/beverage manufacturing." in 5
+replace item = "Processor types" in 6
+replace note = "Selected manufacturing NAICS6 codes are rolled up to their official NAICS4 parent categories." in 6
+replace item = "Classification relationship" in 7
+replace note = "A processor row has both a broad project sector and a NAICS4 processor type; primary production rows have only a broad sector." in 7
+replace item = "Seafood" in 8
+replace note = "Seafood preparation and packaging [3117/311710] is a processor type; fishing and aquaculture are not processors." in 8
+replace item = "Regional names" in 9
+replace note = "Historical names are standardized to Metro Vancouver, qathet, and North Coast." in 9
+replace item = "Reconciliation" in 10
+replace note = "BC totals equal the sum of regional records including Unknown Location; Unknown Location is retained and not allocated." in 10
+export excel using "outputs\01_business_counts\bc_business_processor_counts_2021_2025_stata.xlsx", ///
+    sheet("Readme_Method", replace) firstrow(variables)
+
+// Compact NAICS4 processor crosswalk for workbook users.
+clear
+set obs 10
+gen str4 naics4 = ""
+gen str80 processor_type = ""
+gen str65 broad_project_sector = "Secondary food/beverage manufacturing (excl. seafood)"
+replace naics4 = "3111" in 1
+replace processor_type = "Animal food manufacturing" in 1
+replace naics4 = "3112" in 2
+replace processor_type = "Grain and oilseed milling" in 2
+replace naics4 = "3113" in 3
+replace processor_type = "Sugar and confectionery product manufacturing" in 3
+replace naics4 = "3114" in 4
+replace processor_type = "Fruit and vegetable preserving and specialty food manufacturing" in 4
+replace naics4 = "3115" in 5
+replace processor_type = "Dairy product manufacturing" in 5
+replace naics4 = "3116" in 6
+replace processor_type = "Meat product manufacturing" in 6
+replace naics4 = "3117" in 7
+replace processor_type = "Seafood product preparation and packaging" in 7
+replace naics4 = "3118" in 8
+replace processor_type = "Bakeries and tortilla manufacturing" in 8
+replace naics4 = "3119" in 9
+replace processor_type = "Other food manufacturing" in 9
+replace naics4 = "3121" in 10
+replace processor_type = "Beverage manufacturing" in 10
+replace broad_project_sector = "Seafood & fisheries" if naics4 == "3117"
+export excel using "outputs\01_business_counts\bc_business_processor_counts_2021_2025_stata.xlsx", ///
+    sheet("Processor_Crosswalk", replace) firstrow(variables)
+
+// Excel formula audit for non-Stata reviewers. The formula result sums the
+// regional long sheet; the stored BC value comes from the Stata aggregation;
+// Difference should equal zero.
+use `business_detail', clear
+preserve
+    collapse (sum) bcstats_source_value, by(year sector)
+    gen str20 employee_group = "Total"
+    append using `business_detail'
+    sort year sector employee_group
+    putexcel set "outputs\01_business_counts\bc_business_processor_counts_2021_2025_stata.xlsx", ///
+        modify sheet("BC_Broad_Formula", replace)
+    putexcel A1="Year" B1="Broad project sector" C1="Employee-size group" ///
+        D1="Excel SUMIFS result" E1="Stata BC value" F1="Difference"
+    local row = 2
+    quietly forvalues i = 1/`=_N' {
+        putexcel A`row'=year[`i'] B`row'=sector[`i'] C`row'=employee_group[`i'] ///
+            D`row'=formula("SUMIFS(Regional_Broad_Long!F:F,Regional_Broad_Long!A:A,A`row',Regional_Broad_Long!C:C,B`row',Regional_Broad_Long!E:E,C`row')") ///
+            E`row'=bcstats_source_value[`i'] F`row'=formula("D`row'-E`row'")
+        local ++row
+    }
+    // Repeat headers after the row loop because some Stata/Excel versions drop
+    // the first write immediately after sheet(..., replace).
+    putexcel A1="Year" B1="Broad project sector" C1="Employee-size group" ///
+        D1="Excel SUMIFS result" E1="Stata BC value" F1="Difference"
+restore
+
+use `bc_processor_detail', clear
+preserve
+    collapse (sum) business_count, by(source_year processor_naics4 processor_type)
+    gen str20 employee_group = "Total"
+    append using `bc_processor_detail'
+    sort source_year processor_naics4 employee_group
+    putexcel set "outputs\01_business_counts\bc_business_processor_counts_2021_2025_stata.xlsx", ///
+        modify sheet("BC_Processor_Formula", replace)
+    putexcel A1="Year" B1="NAICS4" C1="Processor type" D1="Employee-size group" ///
+        E1="Excel SUMIFS result" F1="Stata BC value" G1="Difference"
+    local row = 2
+    quietly forvalues i = 1/`=_N' {
+        putexcel A`row'=source_year[`i'] B`row'=processor_naics4[`i'] ///
+            C`row'=processor_type[`i'] D`row'=employee_group[`i'] ///
+            E`row'=formula("SUMIFS(Regional_Processor_Long!F:F,Regional_Processor_Long!A:A,A`row',Regional_Processor_Long!C:C,B`row',Regional_Processor_Long!E:E,D`row')") ///
+            F`row'=business_count[`i'] G`row'=formula("E`row'-F`row'")
+        local ++row
+    }
+    putexcel A1="Year" B1="NAICS4" C1="Processor type" D1="Employee-size group" ///
+        E1="Excel SUMIFS result" F1="Stata BC value" G1="Difference"
+restore
+
+putexcel set "outputs\01_business_counts\bc_business_processor_counts_2021_2025_stata.xlsx", ///
+    modify sheet("Formula_Guide", replace)
+putexcel A1="Formula audit" B1="Purpose"
+putexcel A2="BC broad sectors" B2="SUMIFS regional broad-sector counts by year, sector, and employee-size group; compare with Stata BC totals."
+putexcel A3="BC processor types" B3="SUMIFS regional processor counts by year, NAICS4, and employee-size group; compare with Stata BC totals."
+putexcel A4="Expected result" B4="Every Difference cell should equal zero, including Total rows."
+putexcel A5="Scope" B5="Excel formulas demonstrate regional-to-BC aggregation. Detailed NAICS6 classification remains in the documented Stata workflow/crosswalk."
+putexcel A1="Formula audit" B1="Purpose"
+
+// ===========================================================================
+// PART 3. OPTIONAL STATA PUTEXCEL WORKBOOK
+// ===========================================================================
+// CSV files above are the simpler machine-readable outputs.
+//
+// Note: the final reviewer-facing Excel workbook with formulas is maintained at:
+// outputs\00_final_farm_count\farm_food_counts_results_with_formulas.xlsx
+// That workbook was recreated directly in Excel to avoid a putexcel package
+// compatibility issue seen when opening the Stata-generated workbook.
+// The putexcel workbook below is retained only as a QA/support artifact.
+// ===========================================================================
+
+use `farm_estimates', clear
+putexcel set "outputs\04_quality_checks_logs\farm_food_counts_results_stata_putexcel_QA.xlsx", replace sheet("Assumptions")
+putexcel A1 = "Item" B1 = "Value" C1 = "Note"
+putexcel A2 = "Census 2021 farms" B2 = `census_2021' C2 = "Census of Agriculture anchor"
+putexcel A3 = "ATDP 2021 farms" B3 = `atdp_2021' C3 = "ATDP annual movement indicator"
+putexcel A4 = "Benchmark ratio" B4 = formula("B2/B3") C4 = "Census 2021 / ATDP 2021"
+putexcel A5 = "Farm ATDP coverage years" B5 = "2017-2024" C5 = "No 2025 ATDP farm-count value in current files"
+putexcel A6 = "Business-count source years" B6 = "2021-2025" C6 = "December BC Stats business counts"
+
+putexcel set "outputs\04_quality_checks_logs\farm_food_counts_results_stata_putexcel_QA.xlsx", modify sheet("Farm formulas")
+putexcel A1 = "Year" B1 = "ATDP number of farms" C1 = "ATDP growth rate" D1 = "Benchmark ratio" E1 = "Estimated farms unrounded" F1 = "Estimated farms rounded" G1 = "Assumed farms revenue below $10K" H1 = "ATDP coverage share" I1 = "Below $10K share"
+
+// Write farm rows with formulas so the workbook is transparent to reviewers.
+local row = 2
+quietly {
+    forvalues i = 1/`=_N' {
+        putexcel A`row' = year[`i'] B`row' = atdp_number_of_farms[`i']
+        if `row' > 2 {
+            local prev = `row' - 1
+            putexcel C`row' = formula("B`row'/B`prev'-1")
+        }
+        putexcel D`row' = formula("Assumptions!$B$4")
+        putexcel E`row' = formula("B`row'*D`row'")
+        putexcel F`row' = formula("ROUND(E`row',0)")
+        putexcel G`row' = formula("F`row'-B`row'")
+        putexcel H`row' = formula("B`row'/F`row'")
+        putexcel I`row' = formula("G`row'/F`row'")
+        local ++row
+    }
+}
+
+putexcel set "outputs\04_quality_checks_logs\farm_food_counts_results_stata_putexcel_QA.xlsx", modify sheet("Notes")
+putexcel A1 = "Topic" B1 = "Note"
+putexcel A2 = "Farm/business distinction" B2 = "Farm estimates and BC Stats business counts are separate concepts and should not be added unless a combined agri-food business measure is explicitly defined."
+putexcel A3 = "2025 farms" B3 = "No 2025 ATDP farm-count input exists in the current FarmCount files, so the farm estimate ends at 2024."
+putexcel A4 = "2025 business counts" B4 = "BC Stats business-count data include December 2025 records, so processor/related business counts run through 2025."
+
+// Keep the run log open for the regional modelling sections below.
+
+
+// PART 4. REGIONAL FARM COUNT MODELLING SOURCE FILES AND RESULTS
+// ===========================================================================
+// Current regional method:
+//   Use Statistics Canada ZIP/CSV source files for both required inputs:
+//     1. Census of Agriculture 2021 regional farm counts by farm type
+//        Table 32-10-0231-01 / 32100231-eng.zip
+//     2. STC/ATDP annual BC farm reporting by farm type
+//        Table 32-10-0136-01 / 32100136-eng.zip
+//
+// Removed legacy method:
+//   The earlier fixed-2021-share regional allocation based on the local Excel
+//   file Example_extrapolation\9_farms_classified_by_farm_type-bc.xlsx is no
+//   longer used. The final regional analysis now uses the r,f,t model:
+//     Base r,f,t = Census 2021 count r,f * (STC BC count f,t / STC BC count f,2021)
+//     Adjusted r,f,t = Base r,f,t * benchmark adjustment factor t
+//
+// Below-$10,000 clarification:
+//   The 2021 Census regional benchmark already includes farms below $10,000.
+//   The STC/ATDP annual movement source excludes those farms, so final regional
+//   results are controlled to the BC Census-benchmarked farm totals from Part 1.
+// ===========================================================================
+
+// -----------------------------------------------------------------------------
+// PART 4A. RAW WIDE SOURCE FILES FOR REGIONAL FARM COUNT REVIEW
+//Date: June 26, 2026
+// -----------------------------------------------------------------------------
+// Purpose:
+//   Create a two-tab Excel workbook showing the two source structures before
+//   applying any regional modelling, regrouping, or movement factors.
+//
+// Output workbook:
+//   outputs\02_region_type_outputs\raw_wide_sources_census2021_and_stc_atdp_stata.xlsx
+//
+// Tab 1:
+//   Census_2021_Wide_Raw
+//   2021 Census regional farm counts by farm type, reshaped from long to wide
+//   in Stata.
+//
+// Tab 2:
+//   STC_ATDP_Wide_Raw
+//   Annual STC/ATDP BC farm reporting, 2017-2024, reshaped from long to wide
+//   in Stata.
+//
+// Source 1: Census of Agriculture 2021 regional farm counts by farm type
+//   Statistics Canada table: 32-10-0231-01
+//   Web page:
+//     https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210023101
+//   CSV download for automation:
+//     https://www150.statcan.gc.ca/n1/tbl/csv/32100231-eng.zip
+//
+// Source 2: STC/ATDP annual BC farm reporting by farm type
+//   Statistics Canada table: 32-10-0136-01
+//   Web page:
+//     https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210013601
+//   CSV download for automation:
+//     https://www150.statcan.gc.ca/n1/tbl/csv/32100136-eng.zip
+//
+// Method reminder:
+//   This section prepares raw wide source-review tabs from the StatCan ZIP/CSV
+//   files. The final regional method below uses Census 2021 as the regional
+//   benchmark, STC/ATDP as the BC-level farm-type movement source, and the Part 1
+//   BC Census-benchmarked farm totals as the final annual control.
+// -----------------------------------------------------------------------------
+
+local outxlsx "outputs\02_region_type_outputs\raw_wide_sources_census2021_and_stc_atdp_stata.xlsx"
+// Define this locally inside each independent StatCan section so selected-code
+// execution through Stata's temporary do-files does not lose the path macro.
+local statcan_dir `"`project_root'"'
+capture mkdir "`statcan_dir'"
+
+// -----------------------------------------------------------------------------
+// Tab 1. Census 2021 regional farm counts, reshaped wide in Stata
+// -----------------------------------------------------------------------------
+// Preferred starting point:
+//   Download Statistics Canada Table 32-10-0231-01 directly, then filter and
+//   reshape in Stata. This avoids depending on a manually prepared workstation
+//   file when the next Census of Agriculture table becomes available.
+//
+// Direct table download:
+//   https://www150.statcan.gc.ca/n1/tbl/csv/32100231-eng.zip
+//
+// Expected long structure after filtering:
+//   geo_name, geo_level, parent_economic_region, farm_type, farm_count_2021,
+//   geo_total_farms_2021
+//
+// The goal here is to make farm types into columns so the Census source can be
+// reviewed side by side with the STC/ATDP wide source.
+// No STC/ATDP movement or modelled regional benchmarking is applied in this tab.
+
+// Download and unzip the Census table. If StatCan publishes a new Census table
+// number in the future, update the URL and the CSV file name below.
+local oldpwd "`c(pwd)'"
+cd "`statcan_dir'"
+capture confirm file "32100231.csv"
+if _rc {
+    capture confirm file "32100231-eng.zip"
+    if _rc {
+        copy "https://www150.statcan.gc.ca/n1/tbl/csv/32100231-eng.zip" ///
+            "32100231-eng.zip", replace
+    }
+    else {
+        display as text "Using existing local 32100231-eng.zip"
+    }
+    unzipfile "32100231-eng.zip", replace
+}
+else {
+    display as text "Using existing local 32100231.csv"
+}
+cd "`oldpwd'"
+
+// Import the downloaded Census table. The ZIP currently contains 32100231.csv.
+import delimited using "`statcan_dir'\32100231.csv", clear varnames(1) case(lower)
+
+// Standardize the StatCan field names used below. The NAICS heading contains
+// the farm-type categories and is truncated to 32 characters by Stata.
+capture rename ref_date year
+capture rename value farm_count_2021
+
+// Do not silently suppress a failed farm-type rename. If StatCan changes this
+// header, stop here with the imported variable list instead of failing later
+// with the less-informative message "variable farm_type not found".
+capture confirm variable farm_type
+if _rc {
+    capture confirm variable northamericanindustryclassificat
+    if !_rc {
+        rename northamericanindustryclassificat farm_type
+    }
+    else {
+        display as error "StatCan farm-type column was not found after import."
+        display as error "Expected: northamericanindustryclassificat (the 32-character Stata name)."
+        describe
+        exit 111
+    }
+}
+
+// STATCAN SOURCE NOTES / CORRECTIONS:
+// 1. GEO and NAICS labels include classification codes in square brackets
+//    (for example, "British Columbia [PR590000000]"). Exact text matching fails
+//    unless these suffixes are removed.
+// 2. This table contains several NAICS hierarchy levels. A label can therefore
+//    appear more than once with different codes. For example, "Hog and pig
+//    farming" is supplied at both NAICS 1122 and 112210, and "Fruit and tree nut
+//    farming" appears at 1113 and 111330. Keeping rows by label would double
+//    count these categories. This is a source-table hierarchy feature, not two
+//    separate farm populations or an error in the published count.
+// 3. Preserve the NAICS code before cleaning the label, then select one intended
+//    level per reporting category below. This makes the correction auditable.
+gen str12 farm_type_naics = ""
+replace farm_type_naics = substr(farm_type, strpos(farm_type, "[") + 1, ///
+    strpos(farm_type, "]") - strpos(farm_type, "[") - 1) ///
+    if strpos(farm_type, "[") > 0 & strpos(farm_type, "]") > strpos(farm_type, "[")
+
+// Preserve StatCan's geography code so geography levels are classified from
+// source metadata rather than inferred from repeated names or row order.
+gen str18 geo_statcan_code = ""
+replace geo_statcan_code = substr(geo, strpos(geo, "[") + 1, ///
+    strpos(geo, "]") - strpos(geo, "[") - 1) ///
+    if strpos(geo, "[") > 0 & strpos(geo, "]") > strpos(geo, "[")
+
+replace geo = strtrim(substr(geo, 1, strpos(geo, "[") - 1)) if strpos(geo, "[") > 0
+// Regional StatCan labels also end in ", British Columbia" (for example,
+// "Capital, British Columbia"). Remove the province suffix so they match the
+// project geography names. The province row "British Columbia" is unchanged.
+replace geo = strtrim(subinstr(geo, ", British Columbia", "", .))
+replace farm_type = strtrim(substr(farm_type, 1, strpos(farm_type, "[") - 1)) ///
+    if strpos(farm_type, "[") > 0
+
+// Keep the Census benchmark year and usable farm-count records.
+keep if year == 2021
+keep if farm_count_2021 < .
+
+// Keep British Columbia, the economic regions, and the regional districts used
+// in this project. If the next Census table uses changed geography names, update
+// this list before reshaping.
+gen byte keep_geo = 0
+replace keep_geo = 1 if geo == "British Columbia"
+replace keep_geo = 1 if inlist(geo, "Vancouver Island-Coast", "Lower Mainland-Southwest", "Thompson-Okanagan")
+replace keep_geo = 1 if inlist(geo, "Kootenay", "Cariboo", "North Coast", "Nechako", "Peace River")
+replace keep_geo = 1 if inlist(geo, "Capital", "Cowichan Valley", "Nanaimo", "Alberni-Clayoquot")
+replace keep_geo = 1 if inlist(geo, "Strathcona", "Comox Valley", "Powell River", "Mount Waddington", "Central Coast")
+replace keep_geo = 1 if inlist(geo, "Fraser Valley", "Greater Vancouver", "Sunshine Coast", "Squamish-Lillooet")
+replace keep_geo = 1 if inlist(geo, "Okanagan-Similkameen", "Thompson-Nicola", "Central Okanagan", "Central Okanagan,")
+replace keep_geo = 1 if inlist(geo, "North Okanagan", "Columbia-Shuswap", "East Kootenay", "Central Kootenay", "Kootenay Boundary")
+replace keep_geo = 1 if inlist(geo, "Fraser-Fort George", "Skeena-Queen Charlotte", "Kitimat-Stikine")
+replace keep_geo = 1 if inlist(geo, "Bulkley-Nechako", "Stikine", "Northern Rockies")
+
+// Some lower-level StatCan geographies share names with retained regions. For
+// example, Nanaimo appears as both CD (the intended regional-district level) and
+// CCS (a census consolidated subdivision). Exclude all levels except PR/CAR/CD
+// so same-name lower geographies cannot create duplicate reshape keys.
+replace keep_geo = 0 if substr(geo_statcan_code, 1, 2) != "PR" & ///
+    substr(geo_statcan_code, 1, 3) != "CAR" & ///
+    substr(geo_statcan_code, 1, 2) != "CD"
+keep if keep_geo
+drop keep_geo
+
+// Keep one documented NAICS level for each Census reporting farm type. Use the
+// aggregate code where StatCan also publishes a same-label six-digit child.
+gen byte keep_farm_type = ///
+    inlist(farm_type_naics, "1111", "1112", "1113", "1114", "1119") | ///
+    inlist(farm_type_naics, "112110", "112120", "1122", "1123", "1124", "1129")
+keep if keep_farm_type
+drop keep_farm_type
+
+// Apply stable reporting labels rather than relying on changing source wording.
+replace farm_type = "Oilseed and grain farming" if farm_type_naics == "1111"
+replace farm_type = "Vegetable and melon farming" if farm_type_naics == "1112"
+replace farm_type = "Fruit and tree-nut farming" if farm_type_naics == "1113"
+replace farm_type = "Greenhouse, nursery and floriculture production" if farm_type_naics == "1114"
+replace farm_type = "Other crops farming" if farm_type_naics == "1119"
+replace farm_type = "Beef cattle ranching and farming" if farm_type_naics == "112110"
+replace farm_type = "Dairy cattle and milk production" if farm_type_naics == "112120"
+replace farm_type = "Hog and pig farming" if farm_type_naics == "1122"
+replace farm_type = "Poultry and egg production" if farm_type_naics == "1123"
+replace farm_type = "Sheep and goat farming" if farm_type_naics == "1124"
+replace farm_type = "Other animal production" if farm_type_naics == "1129"
+
+// Each StatCan geographic identifier should now have one row per reporting type.
+isid dguid farm_type
+
+// Build geography hierarchy fields from StatCan's explicit geography codes:
+// PR = province, CAR = Census agricultural region, CD = census division
+// (regional district in BC). Use the precise "Census agricultural region"
+// label for CAR rows; these are not Statistics Canada's economic regions.
+rename geo geo_name
+gen str24 geo_level = ""
+replace geo_level = "Province" if substr(geo_statcan_code, 1, 2) == "PR"
+replace geo_level = "Census agricultural region" if substr(geo_statcan_code, 1, 3) == "CAR"
+replace geo_level = "Regional district" if substr(geo_statcan_code, 1, 2) == "CD"
+
+count if geo_level == ""
+if r(N) > 0 {
+    display as error "Unrecognized StatCan geography code in retained BC rows."
+    list geo_name geo_statcan_code if geo_level == "", noobs
+    exit 459
+}
+
+gen str40 parent_economic_region = ""
+replace parent_economic_region = "Vancouver Island-Coast" if inlist(geo_name, "Capital", "Cowichan Valley", "Nanaimo", "Alberni-Clayoquot")
+replace parent_economic_region = "Vancouver Island-Coast" if inlist(geo_name, "Strathcona", "Comox Valley", "Powell River", "Mount Waddington", "Central Coast")
+replace parent_economic_region = "Lower Mainland-Southwest" if inlist(geo_name, "Fraser Valley", "Greater Vancouver", "Sunshine Coast", "Squamish-Lillooet")
+replace parent_economic_region = "Thompson-Okanagan" if inlist(geo_name, "Okanagan-Similkameen", "Thompson-Nicola", "Central Okanagan", "Central Okanagan,")
+replace parent_economic_region = "Thompson-Okanagan" if inlist(geo_name, "North Okanagan", "Columbia-Shuswap")
+replace parent_economic_region = "Kootenay" if inlist(geo_name, "East Kootenay", "Central Kootenay", "Kootenay Boundary")
+replace parent_economic_region = "Cariboo" if inlist(geo_name, "Fraser-Fort George") | (geo_name == "Cariboo" & geo_level == "Regional district")
+replace parent_economic_region = "North Coast" if inlist(geo_name, "Skeena-Queen Charlotte", "Kitimat-Stikine")
+replace parent_economic_region = "Nechako" if inlist(geo_name, "Bulkley-Nechako", "Stikine")
+replace parent_economic_region = "Peace River" if inlist(geo_name, "Northern Rockies") | (geo_name == "Peace River" & geo_level == "Regional district")
+replace parent_economic_region = geo_name if geo_level == "Census agricultural region"
+replace parent_economic_region = "" if geo_level == "Province"
+
+// Confirm that the fields used by reshape identify one farm-type row uniquely.
+// The CAR grouping field is intentionally blank only for the province row, so
+// allow that expected missing string value while still checking uniqueness.
+isid geo_name geo_level parent_economic_region farm_type, missok
+
+// Add total farms by geography for the wide review tab.
+bysort geo_name geo_level parent_economic_region: egen geo_total_farms_2021 = total(farm_count_2021)
+
+// Keep only the fields needed for the raw source review tab.
+keep geo_name geo_level parent_economic_region farm_type farm_count_2021 geo_total_farms_2021
+
+// Use compact Data Editor widths. These formats affect display only; the full
+// string values and numeric counts remain unchanged.
+format geo_name %28s
+format geo_level %18s
+format parent_economic_region %26s
+format farm_type %38s
+format farm_count_2021 geo_total_farms_2021 %12.0fc
+
+// Create short Stata-safe farm-type IDs for reshape.
+// The final Excel tab uses variable labels so the readable Census names remain
+// visible to reviewers.
+gen str20 census_farm_type_id = ""
+
+replace census_farm_type_id = "beef" ///
+    if farm_type == "Beef cattle ranching and farming"
+
+replace census_farm_type_id = "dairy" ///
+    if farm_type == "Dairy cattle and milk production"
+
+replace census_farm_type_id = "hog" ///
+    if farm_type == "Hog and pig farming"
+
+replace census_farm_type_id = "poultry" ///
+    if farm_type == "Poultry and egg production"
+
+replace census_farm_type_id = "sheepgoat" ///
+    if farm_type == "Sheep and goat farming"
+
+replace census_farm_type_id = "othanimal" ///
+    if farm_type == "Other animal production"
+
+replace census_farm_type_id = "grain" ///
+    if farm_type == "Oilseed and grain farming"
+
+replace census_farm_type_id = "vegmelon" ///
+    if farm_type == "Vegetable and melon farming"
+
+replace census_farm_type_id = "fruit" ///
+    if farm_type == "Fruit and tree-nut farming"
+
+replace census_farm_type_id = "greenhouse" ///
+    if farm_type == "Greenhouse, nursery and floriculture production"
+
+replace census_farm_type_id = "othcrops" ///
+    if farm_type == "Other crops farming"
+
+// QA: if this returns records, the Census farm-type wording changed or a new
+// category exists. Add it to the naming block above before reshaping.
+count if census_farm_type_id == ""
+list geo_name farm_type farm_count_2021 if census_farm_type_id == "", noobs
+
+// farm_type is the readable version of census_farm_type_id and therefore varies
+// within each geography. Drop this redundant long-form field before reshape;
+// otherwise Stata requires it to be constant within the i() variables and stops.
+drop farm_type
+
+// Reshape to wide: one row per geography and farm-type counts as columns.
+reshape wide farm_count_2021, ///
+    i(geo_name geo_level parent_economic_region geo_total_farms_2021) ///
+    j(census_farm_type_id) string
+
+// Add readable labels for Excel headers.
+label variable farm_count_2021beef "Beef cattle ranching and farming"
+label variable farm_count_2021dairy "Dairy cattle and milk production"
+label variable farm_count_2021hog "Hog and pig farming"
+label variable farm_count_2021poultry "Poultry and egg production"
+label variable farm_count_2021sheepgoat "Sheep and goat farming"
+label variable farm_count_2021othanimal "Other animal production"
+label variable farm_count_2021grain "Oilseed and grain farming"
+label variable farm_count_2021vegmelon "Vegetable and melon farming"
+label variable farm_count_2021fruit "Fruit and tree-nut farming"
+label variable farm_count_2021greenhouse "Greenhouse, nursery and floriculture production"
+label variable farm_count_2021othcrops "Other crops farming"
+
+// Put hierarchy fields first, followed by the Census farm-type columns.
+order geo_name geo_level parent_economic_region geo_total_farms_2021 ///
+    farm_count_2021beef farm_count_2021dairy farm_count_2021hog ///
+    farm_count_2021poultry farm_count_2021sheepgoat farm_count_2021othanimal ///
+    farm_count_2021grain farm_count_2021vegmelon farm_count_2021fruit ///
+    farm_count_2021greenhouse farm_count_2021othcrops
+
+export excel using "`outxlsx'", ///
+    sheet("Census_2021_Wide_Raw") firstrow(varlabels) sheetreplace  //This gives us regional base farm types based on 2021 census
+
+// -----------------------------------------------------------------------------
+// Tab 2. STC/ATDP annual BC farm reporting, reshaped wide in Stata
+// -----------------------------------------------------------------------------
+// This source has annual farm-type movement, but only at the BC level.
+// It does not have a regional breakdown. That is why later regional estimates
+// must be described as modelled regional benchmark estimates, not observed
+// annual regional ATDP counts.
+//
+// Preferred starting point:
+//   Download Statistics Canada Table 32-10-0136-01 directly, then filter to
+//   British Columbia, all revenue classes, farms reporting, and number of farms.
+//
+// Direct table download:
+//   https://www150.statcan.gc.ca/n1/tbl/csv/32100136-eng.zip
+
+// Download and unzip the STC/ATDP table. If StatCan publishes a new table ID or
+// file name in the future, update the URL and CSV file name below.
+local statcan_dir `"`project_root'"'
+local oldpwd "`c(pwd)'"
+cd "`statcan_dir'"
+capture confirm file "32100136.csv"
+if _rc {
+    capture confirm file "32100136-eng.zip"
+    if _rc {
+        copy "https://www150.statcan.gc.ca/n1/tbl/csv/32100136-eng.zip" ///
+            "32100136-eng.zip", replace
+    }
+    else {
+        display as text "Using existing local 32100136-eng.zip"
+    }
+    unzipfile "32100136-eng.zip", replace
+}
+else {
+    display as text "Using existing local 32100136.csv"
+}
+cd "`oldpwd'"
+
+// Import the downloaded STC/ATDP table. The ZIP currently contains 32100136.csv.
+import delimited using "`statcan_dir'\32100136.csv", clear varnames(1)
+
+// Keep the annual BC farm-count concept only.
+// This removes revenue-class detail and keeps the all-revenue farm reporting
+// count used for movement calculations.
+keep if geo == "British Columbia"
+keep if revenueclass == "All revenue classes"
+keep if estimatetype == "Farms reporting"
+keep if estimates == "Number of farms"
+keep if value < .
+
+// Keep only fields needed for the raw wide source review.
+keep ref_date geo dguid farmtype revenueclass estimatetype estimates value
+
+rename ref_date year
+rename farmtype farm_type
+rename revenueclass revenue_class
+rename estimatetype estimate_type
+rename value farms_reporting
+
+// Create short Stata-safe names for reshape.
+// Final Excel column meanings are preserved through variable labels below.
+gen str20 stc_farm_type_id = ""
+
+replace stc_farm_type_id = "allfarms" ///
+    if farm_type == "All farm types"
+
+replace stc_farm_type_id = "crop111" ///
+    if farm_type == "Crop production [111]"
+
+replace stc_farm_type_id = "grain1111" ///
+    if farm_type == "Oilseed and grain farming [1111]"
+
+replace stc_farm_type_id = "potato" ///
+    if farm_type == "Potato farming [111211]"
+
+replace stc_farm_type_id = "othveg" ///
+    if farm_type == "Other vegetable (except potato) and melon farming [111219]"
+
+replace stc_farm_type_id = "fruit1113" ///
+    if farm_type == "Fruit and tree nut farming [1113]"
+
+replace stc_farm_type_id = "green1114" ///
+    if farm_type == "Greenhouse, nursery and floriculture production [1114]"
+
+replace stc_farm_type_id = "othcrop" ///
+    if farm_type == "Other crop farming [1119]"
+
+replace stc_farm_type_id = "animal112" ///
+    if farm_type == "Animal production [112]"
+
+replace stc_farm_type_id = "beef112110" ///
+    if farm_type == "Beef cattle ranching and farming, including feedlots [112110]"
+
+replace stc_farm_type_id = "dairy112120" ///
+    if farm_type == "Dairy cattle and milk production [112120]"
+
+replace stc_farm_type_id = "hog1122" ///
+    if farm_type == "Hog and pig farming [1122]"
+
+replace stc_farm_type_id = "poultry1123" ///
+    if farm_type == "Poultry and egg production [1123]"
+
+replace stc_farm_type_id = "othanim112a" ///
+    if farm_type == "Other animal production [112A]"
+
+// QA: if this returns records, StatCan wording changed or a new farm type exists.
+// Add any new category to this naming block before reshaping.
+count if stc_farm_type_id == ""
+list year farm_type farms_reporting if stc_farm_type_id == "", noobs
+
+// farm_type is the readable long-form version of stc_farm_type_id and changes
+// within year. Drop it before reshape so only the ID controls the new columns.
+drop farm_type
+
+// Reshape to wide: one row per year, farm types as columns.
+reshape wide farms_reporting, ///
+    i(year geo dguid revenue_class estimate_type estimates) ///
+    j(stc_farm_type_id) string
+
+// Compact Data Editor width; the full text value remains unchanged.
+format estimates %18s
+
+// Add readable labels for Excel headers.
+label variable farms_reportingallfarms "All farm types"
+label variable farms_reportingcrop111 "Crop production [111]"
+label variable farms_reportinggrain1111 "Oilseed and grain farming [1111]"
+label variable farms_reportingpotato "Potato farming [111211]"
+label variable farms_reportingothveg "Other vegetable (except potato) and melon farming [111219]"
+label variable farms_reportingfruit1113 "Fruit and tree nut farming [1113]"
+label variable farms_reportinggreen1114 "Greenhouse, nursery and floriculture production [1114]"
+label variable farms_reportingothcrop "Other crop farming [1119]"
+label variable farms_reportinganimal112 "Animal production [112]"
+label variable farms_reportingbeef112110 "Beef cattle ranching and farming, including feedlots [112110]"
+label variable farms_reportingdairy112120 "Dairy cattle and milk production [112120]"
+label variable farms_reportinghog1122 "Hog and pig farming [1122]"
+label variable farms_reportingpoultry1123 "Poultry and egg production [1123]"
+label variable farms_reportingothanim112a "Other animal production [112A]"
+
+sort year
+
+export excel using "`outxlsx'", ///
+    sheet("STC_ATDP_Wide_Raw") firstrow(varlabels) sheetreplace
+
+
+// -----------------------------------------------------------------------------
+// Tab 3. Sector renaming/regrouping crosswalk for later modelled benchmarking
+// -----------------------------------------------------------------------------
+// The first two tabs are intentionally raw wide source-review tabs. They show
+// Census farm types and STC/ATDP farm types as they appear in each source.
+//
+// This third tab documents how the source categories should be renamed or
+// regrouped when we move from source review to the modelled regional
+// benchmarking approach.
+//
+// Reporting standard:
+//   Use the 2021 Census farm-type names as the final regional reporting names.
+//
+// Why this matters:
+//   The Census file has regional farm counts by farm type for 2021.
+//   The STC/ATDP file has annual BC farm reporting by farm type.
+//   To use STC/ATDP annual movement with Census regional benchmarks, the farm
+//   type names must be aligned before movement factors are calculated.
+
+// Define these again so this section can be run independently after the setup
+// block. Paths remain relative to the configured project root.
+local statcan_dir `"`project_root'"'
+local outxlsx "`statcan_dir'\outputs\02_region_type_outputs\raw_wide_sources_census2021_and_stc_atdp_stata.xlsx"
+
+putexcel set "`outxlsx'", sheet("Sector_Rename_Crosswalk") modify
+putexcel A1 = "Census reporting farm type" ///
+    B1 = "STC/ATDP source category used for movement" ///
+    C1 = "Treatment" ///
+    D1 = "Method note"
+
+putexcel A2 = "Beef cattle ranching and farming" ///
+    B2 = "Beef cattle ranching and farming, including feedlots [112110]" ///
+    C2 = "Rename / align" ///
+    D2 = "Use STC beef cattle including feedlots as the annual movement indicator for the Census beef cattle category."
+
+putexcel A3 = "Dairy cattle and milk production" ///
+    B3 = "Dairy cattle and milk production [112120]" ///
+    C3 = "Rename / align" ///
+    D3 = "Direct conceptual match; use STC annual movement."
+
+putexcel A4 = "Hog and pig farming" ///
+    B4 = "Hog and pig farming [1122]" ///
+    C4 = "Rename / align" ///
+    D4 = "Direct conceptual match; use STC annual movement."
+
+putexcel A5 = "Poultry and egg production" ///
+    B5 = "Poultry and egg production [1123]" ///
+    C5 = "Rename / align" ///
+    D5 = "Direct conceptual match; use STC annual movement."
+
+putexcel A6 = "Sheep and goat farming" ///
+    B6 = "Animal production [112]" ///
+    C6 = "Proxy movement assumption" ///
+    D6 = "No separate STC sheep/goat annual series was identified. Keep Sheep and goat farming as a separate Census category, but use broader STC Animal production [112] movement as a proxy."
+
+putexcel A7 = "Other animal production" ///
+    B7 = "Other animal production [112A]" ///
+    C7 = "Rename / align" ///
+    D7 = "Use STC Other animal production [112A]. Sheep and goat farming is handled separately using the broader Animal production [112] proxy movement factor."
+
+putexcel A8 = "Oilseed and grain farming" ///
+    B8 = "Oilseed and grain farming [1111]" ///
+    C8 = "Rename / align" ///
+    D8 = "Direct conceptual match; use STC annual movement."
+
+putexcel A9 = "Vegetable and melon farming" ///
+    B9 = "Potato farming [111211] + Other vegetable (except potato) and melon farming [111219]" ///
+    C9 = "Regroup STC split categories" ///
+    D9 = "Sum the two STC vegetable categories before calculating the movement factor for the Census Vegetable and melon farming category."
+
+putexcel A10 = "Fruit and tree-nut farming" ///
+    B10 = "Fruit and tree nut farming [1113]" ///
+    C10 = "Rename / align" ///
+    D10 = "Treat as equivalent; punctuation differs only."
+
+putexcel A11 = "Greenhouse, nursery and floriculture production" ///
+    B11 = "Greenhouse, nursery and floriculture production [1114]" ///
+    C11 = "Rename / align" ///
+    D11 = "Direct conceptual match; use STC annual movement."
+
+putexcel A12 = "Other crops farming" ///
+    B12 = "Other crop farming [1119]" ///
+    C12 = "Rename / align" ///
+    D12 = "Treat as equivalent; singular/plural wording differs only."
+
+putexcel A13 = "All farm types" ///
+    B13 = "All farm types" ///
+    C13 = "Benchmark check only" ///
+    D13 = "Use for BC total checks, not as a farm-type movement factor when type-specific factors are available."
+
+putexcel A15 = "General formula" ///
+    B15 = "Regional estimate r,f,t = Census 2021 count r,f * (STC BC count f,t / STC BC count f,2021)"
+
+putexcel A16 = "Interpretation" ///
+    B16 = "Because STC/ATDP has no regional breakdown, this is a modelled regional benchmarking approach, not direct observed annual regional ATDP measurement."
+
+
+// -----------------------------------------------------------------------------
+// Tab 4. Modelled regional benchmarking output
+// -----------------------------------------------------------------------------
+// Purpose:
+//   Create a first modelled regional output using the method documented above.
+//
+// Output tab:
+//   Modelled_Output
+//
+// Layout:
+//   1. Observed British Columbia STC/ATDP annual rows first.
+//      These are the provincial annual source values and should be kept as-is.
+//   2. Modelled regional rows underneath.
+//      These are calculated by applying BC-level STC/ATDP farm-type movement
+//      factors to 2021 Census regional farm-type benchmark counts.
+//
+// Core formula:
+//   regional estimate r,f,t
+//     = Census 2021 count r,f
+//       * (STC/ATDP BC count f,t / STC/ATDP BC count f,2021)
+//
+// Interpretation:
+//   This is the modelled regional benchmarking approach. It is not direct
+//   observed annual regional STC/ATDP measurement because STC/ATDP has no
+//   regional breakdown in the source table.
+
+// -----------------------------
+// 4A. Build Census-aligned STC/ATDP annual BC counts
+// -----------------------------
+// Re-import the downloaded STC/ATDP table and map source categories to the
+// Census reporting categories used in regional output.
+local statcan_dir `"`project_root'"'
+local outxlsx "`statcan_dir'\outputs\02_region_type_outputs\raw_wide_sources_census2021_and_stc_atdp_stata.xlsx"
+import delimited using "`statcan_dir'\32100136.csv", clear varnames(1)
+
+keep if geo == "British Columbia"
+keep if revenueclass == "All revenue classes"
+keep if estimatetype == "Farms reporting"
+keep if estimates == "Number of farms"
+keep if value < .
+
+capture rename ref_date year
+capture rename farmtype farm_type
+capture rename value stc_bc_count
+
+// Task #13 covers the annual 2017-2024 STC/ATDP series.
+keep if inrange(year, 2017, 2024)
+
+gen str60 census_farm_type = ""
+gen str20 census_farm_type_id = ""
+gen str80 source_treatment = ""
+
+replace census_farm_type = "All farm types" ///
+    if farm_type == "All farm types"
+replace census_farm_type_id = "allfarms" ///
+    if farm_type == "All farm types"
+replace source_treatment = "Observed BC total; benchmark/check only" ///
+    if farm_type == "All farm types"
+
+replace census_farm_type = "Beef cattle ranching and farming" ///
+    if farm_type == "Beef cattle ranching and farming, including feedlots [112110]"
+replace census_farm_type_id = "beef" ///
+    if farm_type == "Beef cattle ranching and farming, including feedlots [112110]"
+replace source_treatment = "Rename / align" ///
+    if farm_type == "Beef cattle ranching and farming, including feedlots [112110]"
+
+replace census_farm_type = "Dairy cattle and milk production" ///
+    if farm_type == "Dairy cattle and milk production [112120]"
+replace census_farm_type_id = "dairy" ///
+    if farm_type == "Dairy cattle and milk production [112120]"
+replace source_treatment = "Rename / align" ///
+    if farm_type == "Dairy cattle and milk production [112120]"
+
+replace census_farm_type = "Hog and pig farming" ///
+    if farm_type == "Hog and pig farming [1122]"
+replace census_farm_type_id = "hog" ///
+    if farm_type == "Hog and pig farming [1122]"
+replace source_treatment = "Rename / align" ///
+    if farm_type == "Hog and pig farming [1122]"
+
+replace census_farm_type = "Poultry and egg production" ///
+    if farm_type == "Poultry and egg production [1123]"
+replace census_farm_type_id = "poultry" ///
+    if farm_type == "Poultry and egg production [1123]"
+replace source_treatment = "Rename / align" ///
+    if farm_type == "Poultry and egg production [1123]"
+
+// Sheep and goat farming has no separate STC/ATDP annual series in the current
+// extract. Use broader Animal production [112] movement as the proxy.
+replace census_farm_type = "Sheep and goat farming" ///
+    if farm_type == "Animal production [112]"
+replace census_farm_type_id = "sheepgoat" ///
+    if farm_type == "Animal production [112]"
+replace source_treatment = "Proxy movement: broader Animal production [112]" ///
+    if farm_type == "Animal production [112]"
+
+replace census_farm_type = "Other animal production" ///
+    if farm_type == "Other animal production [112A]"
+replace census_farm_type_id = "othanimal" ///
+    if farm_type == "Other animal production [112A]"
+replace source_treatment = "Rename / align" ///
+    if farm_type == "Other animal production [112A]"
+
+replace census_farm_type = "Oilseed and grain farming" ///
+    if farm_type == "Oilseed and grain farming [1111]"
+replace census_farm_type_id = "grain" ///
+    if farm_type == "Oilseed and grain farming [1111]"
+replace source_treatment = "Rename / align" ///
+    if farm_type == "Oilseed and grain farming [1111]"
+
+// Vegetable and melon farming is a regrouped Census category. Sum the two STC
+// source categories before calculating movement factors.
+replace census_farm_type = "Vegetable and melon farming" ///
+    if farm_type == "Potato farming [111211]"
+replace census_farm_type_id = "vegmelon" ///
+    if farm_type == "Potato farming [111211]"
+replace source_treatment = "Regroup: potato + other vegetable/melon" ///
+    if farm_type == "Potato farming [111211]"
+
+replace census_farm_type = "Vegetable and melon farming" ///
+    if farm_type == "Other vegetable (except potato) and melon farming [111219]"
+replace census_farm_type_id = "vegmelon" ///
+    if farm_type == "Other vegetable (except potato) and melon farming [111219]"
+replace source_treatment = "Regroup: potato + other vegetable/melon" ///
+    if farm_type == "Other vegetable (except potato) and melon farming [111219]"
+
+replace census_farm_type = "Fruit and tree-nut farming" ///
+    if farm_type == "Fruit and tree nut farming [1113]"
+replace census_farm_type_id = "fruit" ///
+    if farm_type == "Fruit and tree nut farming [1113]"
+replace source_treatment = "Rename / align" ///
+    if farm_type == "Fruit and tree nut farming [1113]"
+
+replace census_farm_type = "Greenhouse, nursery and floriculture production" ///
+    if farm_type == "Greenhouse, nursery and floriculture production [1114]"
+replace census_farm_type_id = "greenhouse" ///
+    if farm_type == "Greenhouse, nursery and floriculture production [1114]"
+replace source_treatment = "Rename / align" ///
+    if farm_type == "Greenhouse, nursery and floriculture production [1114]"
+
+replace census_farm_type = "Other crops farming" ///
+    if farm_type == "Other crop farming [1119]"
+replace census_farm_type_id = "othcrops" ///
+    if farm_type == "Other crop farming [1119]"
+replace source_treatment = "Rename / align" ///
+    if farm_type == "Other crop farming [1119]"
+
+// QA: crop production and animal production aggregates are not used directly,
+// except Animal production [112] as the sheep/goat proxy. Any other unmapped
+// source rows are listed for review.
+list year farm_type stc_bc_count if census_farm_type_id == "", noobs
+
+keep if census_farm_type_id != ""
+collapse (sum) stc_bc_count, by(year census_farm_type census_farm_type_id source_treatment)
+
+tempfile stc_census_aligned_long
+save `stc_census_aligned_long', replace
+
+// Create movement factors indexed to 2021 = 1.000 for each Census-aligned farm
+// type. All farm types is retained for BC observed rows, but type-specific
+// factors drive the regional modelled estimates.
+preserve
+    keep if census_farm_type_id != "allfarms"
+    bysort census_farm_type_id: egen stc_bc_count_2021 = max(cond(year == 2021, stc_bc_count, .))
+    count if missing(stc_bc_count_2021)
+    if r(N) > 0 {
+        display as error "Missing 2021 STC/ATDP denominator for a retained farm type."
+        list census_farm_type_id year stc_bc_count stc_bc_count_2021 ///
+            if missing(stc_bc_count_2021), noobs
+        exit 459
+    }
+    gen movement_factor = stc_bc_count / stc_bc_count_2021
+    assert abs(movement_factor - 1) < 1e-10 if year == 2021
+    isid year census_farm_type_id
+    keep year census_farm_type_id stc_bc_count stc_bc_count_2021 movement_factor
+    tempfile movement_factors
+    save `movement_factors', replace
+restore
+
+// -----------------------------
+// 4B. Keep observed BC annual rows first
+// -----------------------------
+// These rows show the provincial STC/ATDP source values after Census-standard
+// sector alignment. They should be interpreted as observed BC rows, not modelled
+// regional estimates.
+use `stc_census_aligned_long', clear
+rename stc_bc_count farm_count
+
+// These descriptive fields vary by farm type and are already documented in the
+// crosswalk. Keep only the reshape key and value so they do not violate the
+// requirement that all non-reshaped variables be constant within year.
+keep year census_farm_type_id farm_count
+
+reshape wide farm_count, i(year) j(census_farm_type_id) string
+
+gen str40 geo_name = "British Columbia"
+gen str24 geo_level = "Province"
+gen str40 parent_economic_region = ""
+gen str40 output_type = "Observed BC STC/ATDP"
+gen byte row_group_order = 1
+
+order row_group_order output_type year geo_name geo_level parent_economic_region ///
+    farm_countallfarms farm_countbeef farm_countdairy farm_counthog ///
+    farm_countpoultry farm_countsheepgoat farm_countothanimal farm_countgrain ///
+    farm_countvegmelon farm_countfruit farm_countgreenhouse farm_countothcrops
+
+tempfile bc_observed_rows
+save `bc_observed_rows', replace
+
+// -----------------------------
+// 4C. Build Census regional benchmark rows and apply movement factors
+// -----------------------------
+// Re-import the downloaded Census table so the modelled output can be rebuilt
+// from StatCan source data, not from a manually prepared local workstation file.
+local statcan_dir `"`project_root'"'
+import delimited using "`statcan_dir'\32100231.csv", clear varnames(1) case(lower)
+
+capture rename ref_date year
+capture rename value farm_count_2021
+
+// The Census farm-type field is the long NAICS heading, truncated by Stata.
+capture confirm variable farm_type
+if _rc {
+    capture confirm variable northamericanindustryclassificat
+    if !_rc {
+        rename northamericanindustryclassificat farm_type
+    }
+    else {
+        display as error "StatCan farm-type column was not found after import."
+        describe
+        exit 111
+    }
+}
+
+// Preserve source classification codes before removing bracketed suffixes.
+// These codes distinguish hierarchy levels and duplicate geography names.
+gen str12 farm_type_naics = ""
+replace farm_type_naics = substr(farm_type, strpos(farm_type, "[") + 1, ///
+    strpos(farm_type, "]") - strpos(farm_type, "[") - 1) ///
+    if strpos(farm_type, "[") > 0 & strpos(farm_type, "]") > strpos(farm_type, "[")
+
+gen str18 geo_statcan_code = ""
+replace geo_statcan_code = substr(geo, strpos(geo, "[") + 1, ///
+    strpos(geo, "]") - strpos(geo, "[") - 1) ///
+    if strpos(geo, "[") > 0 & strpos(geo, "]") > strpos(geo, "[")
+
+replace geo = strtrim(substr(geo, 1, strpos(geo, "[") - 1)) if strpos(geo, "[") > 0
+replace geo = strtrim(subinstr(geo, ", British Columbia", "", .))
+replace farm_type = strtrim(substr(farm_type, 1, strpos(farm_type, "[") - 1)) ///
+    if strpos(farm_type, "[") > 0
+
+keep if year == 2021
+keep if farm_count_2021 < .
+
+gen byte keep_geo = 0
+replace keep_geo = 1 if geo == "British Columbia"
+replace keep_geo = 1 if inlist(geo, "Vancouver Island-Coast", "Lower Mainland-Southwest", "Thompson-Okanagan")
+replace keep_geo = 1 if inlist(geo, "Kootenay", "Cariboo", "North Coast", "Nechako", "Peace River")
+replace keep_geo = 1 if inlist(geo, "Capital", "Cowichan Valley", "Nanaimo", "Alberni-Clayoquot")
+replace keep_geo = 1 if inlist(geo, "Strathcona", "Comox Valley", "Powell River", "Mount Waddington", "Central Coast")
+replace keep_geo = 1 if inlist(geo, "Fraser Valley", "Greater Vancouver", "Sunshine Coast", "Squamish-Lillooet")
+replace keep_geo = 1 if inlist(geo, "Okanagan-Similkameen", "Thompson-Nicola", "Central Okanagan", "Central Okanagan,")
+replace keep_geo = 1 if inlist(geo, "North Okanagan", "Columbia-Shuswap", "East Kootenay", "Central Kootenay", "Kootenay Boundary")
+replace keep_geo = 1 if inlist(geo, "Fraser-Fort George", "Skeena-Queen Charlotte", "Kitimat-Stikine")
+replace keep_geo = 1 if inlist(geo, "Bulkley-Nechako", "Stikine", "Northern Rockies")
+// Retain only province, Census agricultural region, and census division rows.
+replace keep_geo = 0 if substr(geo_statcan_code, 1, 2) != "PR" & ///
+    substr(geo_statcan_code, 1, 3) != "CAR" & ///
+    substr(geo_statcan_code, 1, 2) != "CD"
+keep if keep_geo
+drop keep_geo
+
+// Keep one intended NAICS hierarchy level per Census reporting category.
+gen byte keep_farm_type = ///
+    inlist(farm_type_naics, "1111", "1112", "1113", "1114", "1119") | ///
+    inlist(farm_type_naics, "112110", "112120", "1122", "1123", "1124", "1129")
+keep if keep_farm_type
+drop keep_farm_type
+
+gen str60 census_farm_type = ""
+gen str20 census_farm_type_id = ""
+replace census_farm_type = "Oilseed and grain farming" if farm_type_naics == "1111"
+replace census_farm_type_id = "grain" if farm_type_naics == "1111"
+replace census_farm_type = "Vegetable and melon farming" if farm_type_naics == "1112"
+replace census_farm_type_id = "vegmelon" if farm_type_naics == "1112"
+replace census_farm_type = "Fruit and tree-nut farming" if farm_type_naics == "1113"
+replace census_farm_type_id = "fruit" if farm_type_naics == "1113"
+replace census_farm_type = "Greenhouse, nursery and floriculture production" if farm_type_naics == "1114"
+replace census_farm_type_id = "greenhouse" if farm_type_naics == "1114"
+replace census_farm_type = "Other crops farming" if farm_type_naics == "1119"
+replace census_farm_type_id = "othcrops" if farm_type_naics == "1119"
+replace census_farm_type = "Beef cattle ranching and farming" if farm_type_naics == "112110"
+replace census_farm_type_id = "beef" if farm_type_naics == "112110"
+replace census_farm_type = "Dairy cattle and milk production" if farm_type_naics == "112120"
+replace census_farm_type_id = "dairy" if farm_type_naics == "112120"
+replace census_farm_type = "Hog and pig farming" if farm_type_naics == "1122"
+replace census_farm_type_id = "hog" if farm_type_naics == "1122"
+replace census_farm_type = "Poultry and egg production" if farm_type_naics == "1123"
+replace census_farm_type_id = "poultry" if farm_type_naics == "1123"
+replace census_farm_type = "Sheep and goat farming" if farm_type_naics == "1124"
+replace census_farm_type_id = "sheepgoat" if farm_type_naics == "1124"
+replace census_farm_type = "Other animal production" if farm_type_naics == "1129"
+replace census_farm_type_id = "othanimal" if farm_type_naics == "1129"
+
+assert census_farm_type_id != ""
+isid dguid census_farm_type_id
+
+rename geo geo_name
+gen str24 geo_level = ""
+replace geo_level = "Province" if substr(geo_statcan_code, 1, 2) == "PR"
+replace geo_level = "Census agricultural region" if substr(geo_statcan_code, 1, 3) == "CAR"
+replace geo_level = "Regional district" if substr(geo_statcan_code, 1, 2) == "CD"
+
+count if geo_level == ""
+if r(N) > 0 {
+    display as error "Unrecognized StatCan geography code in retained BC rows."
+    list geo_name geo_statcan_code if geo_level == "", noobs
+    exit 459
+}
+
+gen str40 parent_economic_region = ""
+replace parent_economic_region = "Vancouver Island-Coast" if inlist(geo_name, "Capital", "Cowichan Valley", "Nanaimo", "Alberni-Clayoquot")
+replace parent_economic_region = "Vancouver Island-Coast" if inlist(geo_name, "Strathcona", "Comox Valley", "Powell River", "Mount Waddington", "Central Coast")
+replace parent_economic_region = "Lower Mainland-Southwest" if inlist(geo_name, "Fraser Valley", "Greater Vancouver", "Sunshine Coast", "Squamish-Lillooet")
+replace parent_economic_region = "Thompson-Okanagan" if inlist(geo_name, "Okanagan-Similkameen", "Thompson-Nicola", "Central Okanagan", "Central Okanagan,")
+replace parent_economic_region = "Thompson-Okanagan" if inlist(geo_name, "North Okanagan", "Columbia-Shuswap")
+replace parent_economic_region = "Kootenay" if inlist(geo_name, "East Kootenay", "Central Kootenay", "Kootenay Boundary")
+replace parent_economic_region = "Cariboo" if inlist(geo_name, "Fraser-Fort George") | (geo_name == "Cariboo" & geo_level == "Regional district")
+replace parent_economic_region = "North Coast" if inlist(geo_name, "Skeena-Queen Charlotte", "Kitimat-Stikine")
+replace parent_economic_region = "Nechako" if inlist(geo_name, "Bulkley-Nechako", "Stikine")
+replace parent_economic_region = "Peace River" if inlist(geo_name, "Northern Rockies") | (geo_name == "Peace River" & geo_level == "Regional district")
+// Make this a complete CAR grouping field: CAR rows carry their own name,
+// regional-district rows carry their assigned CAR, and the province stays blank.
+replace parent_economic_region = geo_name if geo_level == "Census agricultural region"
+replace parent_economic_region = "" if geo_level == "Province"
+
+isid geo_name geo_level parent_economic_region census_farm_type_id, missok
+
+// The Census province row is dropped before creating regional rows. The final
+// British Columbia rows are rebuilt later as benchmark-controlled estimates.
+// Important: the 2021 Census regional benchmark already includes farms below
+// $10,000 revenue. The missing-below-$10,000 issue applies to the STC/ATDP
+// annual movement source, not to the Census regional benchmark.
+drop if geo_level == "Province"
+
+// The remaining Census rows all refer to the 2021 benchmark. Drop that source
+// year before joining so the output year is supplied by the annual STC/ATDP
+// movement-factor dataset. Keeping year in both datasets would leave every
+// joined record labelled 2021 and create duplicate reshape keys.
+drop year
+
+joinby census_farm_type_id using `movement_factors'
+
+isid year geo_name geo_level parent_economic_region census_farm_type_id, missok
+
+// Base regional estimate r,f,t before the below-$10,000 benchmark control.
+gen base_modelled_estimate = round(farm_count_2021 * movement_factor)
+
+// Control the regional farm-count results to the BC-level Census-benchmarked
+// farm totals from Part 1. This accounts for farms below $10,000 that are
+// included in the Census benchmark but excluded from published STC/ATDP movement
+// data. The adjustment is applied only to R_* farm-count estimates.
+merge m:1 year using `farm_estimates', keep(match) nogen ///
+    keepusing(estimated_number_of_farms_bc)
+
+bysort year geo_level geo_name parent_economic_region: egen base_geo_allfarm = total(base_modelled_estimate)
+bysort year geo_level: egen base_regional_allfarm_sum = total(base_modelled_estimate)
+gen benchmark_adjustment_factor = estimated_number_of_farms_bc / base_regional_allfarm_sum
+label variable benchmark_adjustment_factor "BC benchmark / base regional all-farm sum"
+
+gen adjusted_modelled_estimate = base_modelled_estimate * benchmark_adjustment_factor
+gen farm_count = round(adjusted_modelled_estimate)
+gen str40 output_type = "Modelled regional benchmark"
+gen byte row_group_order = 2
+
+// Save the long-form calculation components before reshaping. This dataset is
+// used to create an Excel formula-audit tab for reviewers who do not use Stata.
+// It shows the same calculation in transparent pieces:
+//   Census 2021 regional/type count r,f
+//   STC/ATDP BC count f,t and f,2021
+//   movement factor f,t
+//   BC benchmark adjustment factor t
+//   adjusted regional estimate r,f,t
+gen str180 formula_text = "Adjusted r,f,t = Census r,f * (STC f,t / STC f,2021) * benchmark adjustment factor t"
+gen modelled_estimate = farm_count
+preserve
+    keep output_type year geo_name geo_level parent_economic_region ///
+        census_farm_type census_farm_type_id farm_count_2021 ///
+        stc_bc_count stc_bc_count_2021 movement_factor ///
+        base_modelled_estimate estimated_number_of_farms_bc ///
+        base_regional_allfarm_sum benchmark_adjustment_factor ///
+        formula_text adjusted_modelled_estimate modelled_estimate
+    order output_type year geo_name geo_level parent_economic_region ///
+        census_farm_type census_farm_type_id farm_count_2021 ///
+        stc_bc_count stc_bc_count_2021 movement_factor ///
+        base_modelled_estimate estimated_number_of_farms_bc ///
+        base_regional_allfarm_sum benchmark_adjustment_factor ///
+        formula_text adjusted_modelled_estimate modelled_estimate
+    tempfile formula_audit_long
+    save `formula_audit_long', replace
+restore
+
+keep row_group_order output_type year geo_name geo_level parent_economic_region ///
+    census_farm_type_id farm_count
+
+reshape wide farm_count, ///
+    i(row_group_order output_type year geo_name geo_level parent_economic_region) ///
+    j(census_farm_type_id) string
+
+egen farm_countallfarms = rowtotal(farm_countbeef farm_countdairy farm_counthog ///
+    farm_countpoultry farm_countsheepgoat farm_countothanimal farm_countgrain ///
+    farm_countvegmelon farm_countfruit farm_countgreenhouse farm_countothcrops)
+
+append using `bc_observed_rows'
+
+// Rebuild the province rows as benchmark-controlled estimates. The All farm
+// types column uses the BC benchmark from Part 1; farm-type columns are summed
+// from adjusted regional-district results.
+merge m:1 year using `farm_estimates', keep(match master) nogen ///
+    keepusing(estimated_number_of_farms_bc)
+foreach v in farm_countbeef farm_countdairy farm_counthog farm_countpoultry ///
+    farm_countsheepgoat farm_countothanimal farm_countgrain farm_countvegmelon ///
+    farm_countfruit farm_countgreenhouse farm_countothcrops {
+    bysort year: egen _sum_`v' = total(cond(geo_level == "Regional district", `v', .))
+    replace `v' = _sum_`v' if geo_level == "Province"
+    drop _sum_`v'
+}
+replace farm_countallfarms = estimated_number_of_farms_bc if geo_level == "Province"
+replace output_type = "BC benchmark-controlled farm estimate" if geo_level == "Province"
+drop estimated_number_of_farms_bc
+
+sort row_group_order year geo_level parent_economic_region geo_name
+
+label variable output_type "Output row type"
+label variable year "Year"
+label variable geo_name "Geography"
+label variable geo_level "Geography level"
+label variable parent_economic_region "Census agricultural region (CAR)"
+label variable farm_countallfarms "All farm types"
+label variable farm_countbeef "Beef cattle ranching and farming"
+label variable farm_countdairy "Dairy cattle and milk production"
+label variable farm_counthog "Hog and pig farming"
+label variable farm_countpoultry "Poultry and egg production"
+label variable farm_countsheepgoat "Sheep and goat farming"
+label variable farm_countothanimal "Other animal production"
+label variable farm_countgrain "Oilseed and grain farming"
+label variable farm_countvegmelon "Vegetable and melon farming"
+label variable farm_countfruit "Fruit and tree-nut farming"
+label variable farm_countgreenhouse "Greenhouse, nursery and floriculture production"
+label variable farm_countothcrops "Other crops farming"
+
+order output_type year geo_name geo_level parent_economic_region ///
+    farm_countallfarms farm_countbeef farm_countdairy farm_counthog ///
+    farm_countpoultry farm_countsheepgoat farm_countothanimal farm_countgrain ///
+    farm_countvegmelon farm_countfruit farm_countgreenhouse farm_countothcrops
+drop row_group_order
+
+tempfile regional_results_wide
+save `regional_results_wide', replace
+
+export excel using "`outxlsx'", ///
+    sheet("Modelled_Output") firstrow(varlabels) sheetreplace
+
+
+// -----------------------------------------------------------------------------
+// Tab 5. Formula audit for Excel reviewers
+// -----------------------------------------------------------------------------
+// This tab is intentionally long rather than wide. Each row shows one regional
+// farm-type estimate for one year, with the input pieces and the formula result.
+// This makes the method easier to review without Stata.
+
+use `formula_audit_long', clear
+
+label variable output_type "Output row type"
+label variable year "Year"
+label variable geo_name "Geography"
+label variable geo_level "Geography level"
+label variable parent_economic_region "Census agricultural region (CAR)"
+label variable census_farm_type "Census reporting farm type"
+label variable census_farm_type_id "Farm type ID"
+label variable farm_count_2021 "2021 Census regional/type count"
+label variable stc_bc_count "STC/ATDP BC count in year t"
+label variable stc_bc_count_2021 "STC/ATDP BC count in 2021"
+label variable movement_factor "Movement factor: STC year t / STC 2021"
+label variable base_modelled_estimate "Base modelled estimate before below-$10K adjustment"
+label variable estimated_number_of_farms_bc "BC benchmarked farm total for year t"
+label variable base_regional_allfarm_sum "Pre-control modelled regional all-farm sum for year t"
+label variable benchmark_adjustment_factor "Benchmark adjustment factor t"
+label variable formula_text "Formula text"
+label variable adjusted_modelled_estimate "Adjusted regional estimate r,f,t before rounding"
+label variable modelled_estimate "Adjusted modelled estimate calculated in Stata"
+
+export excel using "`outxlsx'", ///
+    sheet("Formula_Audit") firstrow(varlabels) sheetreplace
+
+// Add live Excel formulas beside the Stata-calculated results so non-Stata
+// reviewers can audit the adjustment. The formula references:
+//   K = I/J movement factor
+//   L = H*K base estimate
+//   O = M/N benchmark adjustment factor
+//   Q = L*O adjusted estimate
+// The Stata-calculated audit values are already exported for every row above.
+// To keep the do-file fast, write live Excel formulas only for a few
+// reviewer example rows instead of thousands of rows.
+putexcel set "`outxlsx'", sheet("Formula_Audit") modify
+putexcel K1 = "Movement factor: STC year t / STC 2021"
+putexcel L1 = "Base modelled estimate before below-$10K adjustment"
+putexcel M1 = "BC benchmarked farm total for year t"
+putexcel N1 = "Base regional all-farm sum for geography level/year"
+putexcel O1 = "Benchmark adjustment factor t"
+putexcel P1 = "Adjusted estimate formula text"
+putexcel Q1 = "Adjusted regional estimate r,f,t (Excel formula)"
+putexcel S1 = "Below-$10K adjustment note"
+
+gen long excel_row = _n + 1
+gen byte formula_example = 0
+replace formula_example = 1 if year == 2018 ///
+    & geo_name == "Cariboo" ///
+    & geo_level == "Regional district" ///
+    & inlist(census_farm_type, "Oilseed and grain farming", ///
+        "Beef cattle ranching and farming")
+quietly levelsof excel_row if formula_example, local(example_rows)
+foreach xrow of local example_rows {
+    putexcel K`xrow' = formula("I`xrow'/J`xrow'")
+    putexcel L`xrow' = formula("ROUND(H`xrow'*K`xrow',0)")
+    putexcel O`xrow' = formula("M`xrow'/N`xrow'")
+    putexcel Q`xrow' = formula("L`xrow'*O`xrow'")
+    putexcel S`xrow' = "Example formula row only; all other rows use Stata-calculated audit values already exported in columns K, L, O, and Q."
+}
+drop excel_row formula_example
+
+// -----------------------------------------------------------------------------
+// Example tabs for the final reviewer workbook
+// -----------------------------------------------------------------------------
+// Keep these tabs short and non-duplicative. They explain one concrete regional
+// calculation without repeating the full Modelled_Output or Formula_Audit tabs.
+
+local finalxlsx "outputs\00_final_farm_count\Farm_business_counts_final_results.xlsx"
+capture confirm file "`finalxlsx'"
+if _rc {
+    display as error "Final reviewer workbook not found: `finalxlsx'"
+    exit 601
+}
+
+putexcel set "`finalxlsx'", sheet("Example_Readme", replace) modify
+putexcel A1 = "Plain-language regional farm-count example"
+putexcel A3 = "What we estimated" ///
+    B3 = "Annual regional farm counts by farm type. Example: Cariboo Regional district, Oilseed and grain farming, 2018."
+putexcel A4 = "What Census gives us" ///
+    B4 = "The 2021 Census gives the regional structure. For this example, Cariboo had 4 oilseed and grain farms in 2021. This is the regional/farm-type starting point: r = Cariboo, f = Oilseed and grain."
+putexcel A5 = "What STC/ATDP gives us" ///
+    B5 = "STC/ATDP gives annual farm counts by farm type at the BC level, not by region. For oilseed and grain farming, BC had 275 farms in 2018 and 365 farms in 2021."
+putexcel A6 = "How we use STC/ATDP" ///
+    B6 = "We use the BC-level farm-type movement to annualize the regional Census count. For 2018 oilseed and grain, movement = 275 / 365 = 0.7534."
+putexcel A7 = "Base regional estimate" ///
+    B7 = "Apply the BC movement to the Cariboo 2021 Census count: 4 x 0.7534 = 3.0137, rounded to 3 before the final benchmark control."
+putexcel A8 = "Why there is a benchmark control" ///
+    B8 = "The regional model is built from Census regional structure and STC/ATDP movement, but the regional totals must reconcile to the accepted BC farm estimate in the F_ tabs. For 2018, the accepted BC total is 15,496 farms."
+putexcel A9 = "What column L means" ///
+    B9 = "Column L is not raw STC/ATDP data. It is the sum of all modelled regional farm estimates for year t before the final BC benchmark control. For 2018, this pre-control modelled total is 15,618."
+putexcel A10 = "Benchmark factor" ///
+    B10 = "For 2018, benchmark factor = accepted BC total / pre-control modelled regional total = 15,496 / 15,618 = 0.9921885."
+putexcel A11 = "Final example result" ///
+    B11 = "For Cariboo oilseed and grain in 2018: adjusted estimate = 3 x 0.9921885 = 2.9766, rounded to 3 farms."
+putexcel A12 = "Bottom line" ///
+    B12 = "Census gives the regional and farm-type structure. STC/ATDP gives the annual BC-level movement. The F_ farm estimate gives the final BC total control. The regional estimates are modelled results, not directly observed annual regional counts."
+
+preserve
+    keep if geo_name == "Cariboo" ///
+        & geo_level == "Regional district" ///
+        & census_farm_type == "Oilseed and grain farming"
+    count
+    if r(N) == 0 {
+        display as error "No Cariboo oilseed and grain rows found for Example_Cariboo_Calc."
+        exit 459
+    }
+    keep year geo_name geo_level parent_economic_region census_farm_type ///
+        farm_count_2021 stc_bc_count stc_bc_count_2021 movement_factor ///
+        base_modelled_estimate estimated_number_of_farms_bc ///
+        base_regional_allfarm_sum benchmark_adjustment_factor ///
+        adjusted_modelled_estimate modelled_estimate
+    sort year
+    format farm_count_2021 stc_bc_count stc_bc_count_2021 ///
+        base_modelled_estimate estimated_number_of_farms_bc ///
+        base_regional_allfarm_sum modelled_estimate %12.0fc
+    format movement_factor benchmark_adjustment_factor adjusted_modelled_estimate %12.4f
+    label variable modelled_estimate "Final rounded Cariboo estimate"
+    export excel using "`finalxlsx'", ///
+        sheet("Example_Cariboo_Calc") firstrow(varlabels) sheetreplace
+
+    // Make the worked example transparent in Excel. Input/source columns stay
+    // as values; calculated columns show live formulas directly on this tab.
+    putexcel set "`finalxlsx'", sheet("Example_Cariboo_Calc") modify
+    putexcel I1 = "Movement factor = G/H"
+    putexcel J1 = "Base estimate = ROUND(F*I,0)"
+    putexcel L1 = "Pre-control modelled regional all-farm sum for year t"
+    putexcel M1 = "Benchmark factor = K/L"
+    putexcel N1 = "Adjusted estimate = J*M"
+    putexcel O1 = "Final rounded = ROUND(N,0)"
+    putexcel Q1 = "2018 plain-language formula"
+    putexcel R1 = "Explanation / value"
+    putexcel S1 = "Excel check for column L"
+    putexcel Q2 = "Census regional/farm-type starting point" ///
+        R2 = "Cariboo oilseed and grain farms in 2021 = 4"
+    putexcel Q3 = "BC-level STC/ATDP movement" ///
+        R3 = "275 / 365 = 0.7534"
+    putexcel Q4 = "Base regional estimate" ///
+        R4 = "4 x 0.7534 = 3.0137, rounded to 3"
+    putexcel Q5 = "Pre-control modelled regional total" ///
+        R5 = "Sum of all modelled regional farm estimates for 2018 = 15,618"
+    putexcel Q6 = "BC benchmark total from F_ tabs" ///
+        R6 = "Accepted 2018 BC farm estimate = 15,496"
+    putexcel Q7 = "Benchmark factor" ///
+        R7 = "15,496 / 15,618 = 0.9921885"
+    putexcel Q8 = "Final Cariboo estimate" ///
+        R8 = "3 x 0.9921885 = 2.9766, rounded to 3 farms"
+    putexcel Q9 = "Important note" ///
+        R9 = "15,618 is not raw STC/ATDP BC data. It is the modelled regional pre-control total before scaling to the accepted BC benchmark."
+    putexcel Q11 = "Column L derivation note" ///
+        R11 = "Column L is calculated in the regional formula-audit data as the sum of all base modelled regional farm estimates for the same year t before the final BC benchmark control. For example, L2 = 15,884 for 2017. It is produced after applying the Census regional/farm-type starting counts and STC/ATDP BC farm-type movement factors across all regional rows, then summing those base modelled values for 2017."
+    putexcel Q12 = "Excel version of Stata bysort" ///
+        R12 = "Stata: bysort year geo_level: egen base_regional_allfarm_sum = total(base_modelled_estimate). Excel equivalent for this sheet: SUMIFS(R_Regional_Formula_Audit!L:L, R_Regional_Formula_Audit!B:B, A2, R_Regional_Formula_Audit!D:D, C2). This sums Formula_Audit column L for the same year and geography level as the example row."
+    putexcel Q13 = "Column S check" ///
+        R13 = "Column S shows that Excel SUMIFS calculation for each example row. It should match column L. For 2017, S2 checks L2 = 15,884; for 2018, S3 checks L3 = 15,618."
+    putexcel Q14 = "Rounding and 2024 precision note" ///
+        R14 = "Columns L and S match for 2017-2023 after row-level rounding. For 2024, Excel gives 15,971 versus Stata 15,967 because four exact .5 ties are stored just below .5 in Stata single precision and round down. This is a numeric-precision effect, not a geography-filter or source-data error."
+    forvalues xrow = 2/9 {
+        putexcel I`xrow' = formula("G`xrow'/H`xrow'")
+        putexcel J`xrow' = formula("ROUND(F`xrow'*I`xrow',0)")
+        putexcel M`xrow' = formula("K`xrow'/L`xrow'")
+        putexcel N`xrow' = formula("J`xrow'*M`xrow'")
+        putexcel O`xrow' = formula("ROUND(N`xrow',0)")
+        putexcel S`xrow' = formula("SUMIFS(R_Regional_Formula_Audit!L:L,R_Regional_Formula_Audit!B:B,A`xrow',R_Regional_Formula_Audit!D:D,C`xrow')")
+    }
+restore
+
+preserve
+    use `regional_results_wide', clear
+    keep if (geo_name == "British Columbia" & geo_level == "Province") | ///
+        (geo_name == "Cariboo" & geo_level == "Regional district")
+    keep output_type year geo_name geo_level parent_economic_region ///
+        farm_countallfarms farm_countgrain
+    gen byte example_order = 1
+    replace example_order = 2 if geo_name == "Cariboo"
+    sort year example_order
+    drop example_order
+    label variable farm_countallfarms "All farm types"
+    label variable farm_countgrain "Oilseed and grain farming"
+    export excel using "`finalxlsx'", ///
+        sheet("Example_Compare") firstrow(varlabels) sheetreplace
+
+    putexcel set "`finalxlsx'", sheet("Example_Compare") modify
+    putexcel I1 = "How to read this table"
+    putexcel I2 = "British Columbia rows show final benchmark-controlled BC totals. Cariboo rows show modelled regional results. The 2018 Cariboo oilseed/grain value of 3 comes from the worked calculation in Example_Cariboo_Calc."
+restore
+
+// -----------------------------------------------------------------------------
+// Example tab: check BC province-row values with Excel formulas
+// -----------------------------------------------------------------------------
+// This tab gives non-Stata reviewers a direct Excel check for values that are
+// written as results in R_Regional_Results.
+
+putexcel set "`finalxlsx'", sheet("Example_BC_Row_Check", replace) modify
+putexcel A1 = "Example: checking a BC province row value with Excel formulas"
+putexcel A3 = "Purpose" ///
+    B3 = "Show how values written by Stata in R_Regional_Results can be checked in Excel without using Stata."
+putexcel A4 = "Example row" ///
+    B4 = "R_Regional_Results row 2: British Columbia, 2017."
+putexcel A5 = "Important distinction" ///
+    B5 = "BC All farm types comes from the F_ BC benchmark total. BC farm-type columns are sums of adjusted regional-district modelled estimates."
+
+putexcel A7 = "Value being checked" ///
+    B7 = "Where shown in R_Regional_Results" ///
+    C7 = "Live Excel check formula" ///
+    D7 = "Plain-language meaning"
+putexcel A8 = "2017 BC All farm types = 15,597" ///
+    B8 = "R_Regional_Results!F2" ///
+    C8 = formula("SUMIFS(F_Estimates_Final!E:E,F_Estimates_Final!A:A,2017)") ///
+    D8 = "Look up the accepted 2017 BC farm estimate from the F_ tab."
+putexcel A9 = "2017 BC Beef cattle = 2,214" ///
+    B9 = "R_Regional_Results!G2" ///
+    C9 = formula("SUMIFS(R_Regional_Results!G:G,R_Regional_Results!B:B,2017,R_Regional_Results!D:D,$B$15)") ///
+    D9 = "Sum the 2017 beef cattle values for regional-district rows only. Do not include Province or Census agricultural region rows."
+putexcel A11 = "Why this matters" ///
+    B11 = "The BC farm-type value is not raw STC/ATDP data and not a manual entry. It is the sum of adjusted regional-district modelled estimates after benchmark control."
+putexcel A12 = "How to repeat for another farm type" ///
+    B12 = "Use the same SUMIFS formula but change the summed column. For example, column M checks Oilseed and grain farming."
+putexcel A13 = "Example oilseed/grain check" ///
+    B13 = "R_Regional_Results!M2" ///
+    C13 = formula("SUMIFS(R_Regional_Results!M:M,R_Regional_Results!B:B,2017,R_Regional_Results!D:D,$B$15)") ///
+    D13 = "Sum 2017 oilseed and grain values for regional-district rows only."
+putexcel A15 = "Formula criteria used in rows 9 and 13" ///
+    B15 = "Regional district"
+
+// -----------------------------------------------------------------------------
+// Tab 6. Plain-language method note for Excel reviewers
+// -----------------------------------------------------------------------------
+// This note go with the Excel workbook so non-Stata users can understand
+// what was done and how to interpret the modelled regional estimates.
+
+putexcel set "`outxlsx'", sheet("Method_Note") modify
+putexcel A1 = "Regional farm count modelled benchmarking method"
+putexcel A3 = "Purpose" ///
+    B3 = "Estimate annual regional farm counts by farm type using 2021 Census regional benchmarks, annual STC/ATDP BC-level farm-type movement, and a BC benchmark control adjustment for farms below $10,000 excluded from STC/ATDP."
+putexcel A4 = "Important interpretation" ///
+    B4 = "The 2021 Census regional benchmark already includes farms below $10,000 revenue. STC/ATDP provides annual movement by farm type at the BC level, but no regional breakdown and excludes farms below $10,000."
+putexcel A5 = "Core formula" ///
+    B5 = "Adjusted regional estimate r,f,t = Census 2021 count r,f * (STC BC count f,t / STC BC count f,2021) * benchmark adjustment factor t."
+putexcel A6 = "Observed BC rows" ///
+    B6 = "The British Columbia rows are benchmark-controlled farm estimates. All farm types uses the F_* BC benchmark; farm-type columns are summed from adjusted regional-district results."
+putexcel A7 = "Modelled regional rows" ///
+    B7 = "Regional rows preserve the Census regional/farm-type structure and STC/ATDP annual movement, then apply the benchmark adjustment factor t."
+putexcel A8 = "Vegetable and melon treatment" ///
+    B8 = "STC Potato farming [111211] and Other vegetable (except potato) and melon farming [111219] are summed to align with the Census Vegetable and melon farming category."
+putexcel A9 = "Sheep and goat treatment" ///
+    B9 = "No separate STC/ATDP sheep and goat annual series was identified, so Sheep and goat farming uses broader Animal production [112] movement as a proxy while remaining a separate Census reporting category."
+putexcel A10 = "Other animal treatment" ///
+    B10 = "Other animal production uses STC Other animal production [112A]. Sheep/goat is not folded into Other animal production."
+putexcel A11 = "Source tables" ///
+    B11 = "Census: Statistics Canada Table 32-10-0231-01. STC/ATDP: Statistics Canada Table 32-10-0136-01."
+putexcel A12 = "Workbook tabs" ///
+    B12 = "Raw source tabs show downloaded source structures; Sector_Rename_Crosswalk shows category alignment; Modelled_Output shows benchmark-controlled BC rows and adjusted regional modelled rows; Formula_Audit shows the base formula, adjustment factor, and adjusted formula."
+putexcel A13 = "Geography terminology" ///
+    B13 = "CAR means Census agricultural region. In the CAR column, CAR rows show their own name, regional-district rows show their assigned CAR, and the British Columbia province row is blank. CAR is not the same as a Statistics Canada economic region."
+putexcel A14 = "Future refresh option" ///
+    B14 = "A future version could connect Excel Power Query directly to the Statistics Canada CSV/ZIP links for source refresh, then either run the same transformations in Power Query or pass refreshed source tables to R/Stata for reshaping, regrouping, and modelling."
+putexcel A15 = "Open-source option" ///
+    B15 = "Because Stata licensing can be costly, the workflow could also be rebuilt in R using readr/readxl, dplyr/tidyr, and openxlsx. R can download the StatCan ZIP files, apply the same sector crosswalk, calculate movement factors, and write the same Excel review tabs."
+putexcel A16 = "Recommended next step" ///
+    B16 = "Keep the current Stata code as the documented prototype, then evaluate whether the production refresh should be Excel Power Query only, R plus Excel, or Stata plus Excel depending on team access and maintainability."
+putexcel A17 = "Future dashboard" ///
+    B17 = "After the regional estimates, sector crosswalk, proxy assumptions, and reconciliation checks are approved, the refresh workflow can be rebuilt in Power Query or R and connected to an interactive Power BI dashboard."
+putexcel A18 = "Movement factor interpretation" ///
+    B18 = "Above 1 means the BC farm-type count increased from 2021; below 1 means it decreased from 2021; equal to 1 means no change from 2021."
+
+capture log close
+
