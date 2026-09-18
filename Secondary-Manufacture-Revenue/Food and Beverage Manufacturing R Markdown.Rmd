@@ -327,7 +327,7 @@ NAICS3[, val_norm := fifelse(val_norm == 0, NA_real_, val_norm)]
 # and tobacco product manufacturing) category in B.C. using the same percentage
 # year-over-year 2023-2024 as the 3121 (Beverage manufacturing) category in B.C.
 # for the same year
-NAICS3$val_norm[
+NAICS3$val_interp[
   which(NAICS3$NAICS_Code == "312" 
         & NAICS3$REF_DATE == "2024" 
         & NAICS3$Principal.statistics == "Revenue from goods manufactured"
