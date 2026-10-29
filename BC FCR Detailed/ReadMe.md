@@ -20,7 +20,7 @@ The BC Farm Cash Receipt (FCR) Detailed imputes FCR values for detailed commodit
 
 The resulting data set from this work is used as input for various dashboards and reports that the ministry publishes and uses to better understand what makes up the total cash receipts from agricultural production in BC. The base data source aggregates certain commodity groups (e.g., fresh vegetables - field, fresh vegetables - greenhouse) despite detailed FCR estimates being available through other data sources. The resulting hierarchical data set is published as part of an interactive dashboard report found in the [minsitry's public website](https://www2.gov.bc.ca/gov/content/industry/agriculture-seafood/statistics/agriculture-and-seafood-statistics-publications) through the following URL:
 
-<https://app.powerbi.com/view?r=eyJrIjoiMTA0MDg1MzEtNzM5Zi00MzJkLWI5ODAtNTY1ZTBiNDZjNzVkIiwidCI6IjZmZGI1MjAwLTNkMGQtNGE4YS1iMDM2LWQzNjg1ZTM1OWFkYyJ9>
+<https://app.powerbi.com/view?r=eyJrIjoiZTVkMGVjNTItZWY5Yy00MzczLWIzOTYtNDM5ZTdjMjcyZTE5IiwidCI6IjZmZGI1MjAwLTNkMGQtNGE4YS1iMDM2LWQzNjg1ZTM1OWFkYyJ9>
 
 **HOW do we do it?**
 
