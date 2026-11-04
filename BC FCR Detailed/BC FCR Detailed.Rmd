@@ -891,6 +891,7 @@ AllCropsFCR <- AllCropsFCR %>%
            `Fresh watermelons` -
            `Other fresh melons` -
            `Fresh sweet potatoes` -
+           `Fresh & processed mushrooms` -
            `Other field vegetables` -  
            `Fresh apples` -
            `Fresh blueberries` -
@@ -1029,6 +1030,7 @@ FCR_ref_breakdown <- tribble(
   "Crops", "Field vegetables", "Fresh tomatoes",
   "Crops", "Field vegetables", "Fresh watermelons",
   "Crops", "Field vegetables", "Other fresh melons",
+  "Crops", "Field vegetables", "Fresh & processed mushrooms",
   "Crops", "Floriculture", "Field-grown cut flowers",
   "Crops", "Floriculture", "GH floriculture",
   "Crops", "Grains and oilseeds", "Barley",
