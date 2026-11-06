@@ -1,0 +1,5 @@
+let
+    Source = Table.FromRows(Json.Document(Binary.Decompress(Binary.FromText("VcoxCoAwDADAr5SAWyNNNCl9S8hYV8HB9wtxadbjzKBt5b7KM98dKhB4NaCWsP+IsiIHsqKkewYLYU9bghU56RHaFcdYWcH9Aw==", BinaryEncoding.Base64), Compression.Deflate)), let _t = ((type nullable text) meta [Serialized.Text = true]) in type table [#"% of Total Op. Revenues" = _t, Rank = _t]),
+    #"Changed Type" = Table.TransformColumnTypes(Source,{{"% of Total Op. Revenues", type text}, {"Rank", Int64.Type}})
+in
+    #"Changed Type"

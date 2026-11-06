@@ -1,0 +1,6 @@
+let
+    Source = Table.FromRows(Json.Document(Binary.Decompress(Binary.FromText("ddAxCoAwDAXQq4TSzQppsEPOII5O4iDYtYKI59dgjVVwyJDm8VMyDMZ62BawHh0iGmf6NMdV+taMTsbyLnUxx8xSp7S+q7J5ADU6xRZqsA3fQVgqDQkXI3WkC6c0w7LH9bWLgqY8Id9dFLBQyigvO9sMC8f/XwpYsv+4fLvvGccD", BinaryEncoding.Base64), Compression.Deflate)), let _t = ((type nullable text) meta [Serialized.Text = true]) in type table [Attribute = _t, #"Revenue Group" = _t]),
+    #"Changed Type" = Table.TransformColumnTypes(Source,{{"Attribute", type text}, {"Revenue Group", type text}}),
+    #"Renamed Columns" = Table.RenameColumns(#"Changed Type",{{"Attribute", "Revenue Class"}, {"Revenue Group", "Revenue Group"}})
+in
+    #"Renamed Columns"
