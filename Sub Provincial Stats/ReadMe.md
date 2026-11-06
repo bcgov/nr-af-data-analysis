@@ -34,7 +34,7 @@ Sub-Provincial FCR.pbix includes 3 queries
 
 Take each CCS' share of total operating revenue reported for the year
 2020 according to the Census of Agriculture (i.e., Abbotsford is 22.6%
-of BC total) and applied that to annual FCR estimates. The main
+of BC total) using the query called "CEAG2021_FlatFile - Revenue" and applied that to annual FCR estimates query called "FCR_Annual_3210004501". The main
 assumption and limitation is that share and prices are consistent
 throughout the years and across CCS' so 2025 estimates are the least
 reliable. The Census of Agriculture 2026 will provide an update with a
