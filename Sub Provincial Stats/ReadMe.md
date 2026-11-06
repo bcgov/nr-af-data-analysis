@@ -83,7 +83,7 @@ where:
   also serves as a reference tool for Sub-provincial FCR query for the
   column called CCS which stands for consolidated census subdivision
 
-![](images/clipboard-3331437902.png)
+![](images/clipboard-1043648808.png)
 
 [Regional
 Profiles.pbix](https://bcgov.sharepoint.com/:u:/r/sites/AF-SPID-SICI_Subsite3/Project%20Files/1.6d%20Sub-Provincial%20Statistics/02%20Analysis%20and%20Results/2026/1.6d%20Regional%20Stats.pbix?d=w47e4df64689842268da7d86978b7881d&csf=1&web=1&e=9Gerq3)
@@ -116,6 +116,6 @@ Load and merge data with reference tables and create visualizations
 
 <img src="https://github.com/user-attachments/assets/f4fa4390-3efa-4ac9-8d9b-cee4d2e60e8b" alt="image" width="1103" height="692"/>
 
-Where are the files? The working files are in SI Projects Site >
-Project Files > Sub Provincial Statistics The PowerBI Workspace is
+Where are the files? The working files are in SI Projects Site \>
+Project Files \> Sub Provincial Statistics The PowerBI Workspace is
 called AF Sector Intelligence BC Gov (Internal) Dashboards
