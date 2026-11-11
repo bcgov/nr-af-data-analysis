@@ -138,6 +138,50 @@ MushroomArea$Commodity <- "Fresh & processed mushrooms"
 ```{r FieldVeg}
 tic()
 
+# Load the Potatoes Area table
+PotatoesArea <- get_cansim("32-10-0358") 
+
+# Clean the PotatoesArea dataframe
+PotatoesArea <- PotatoesArea %>%
+  
+  # Convert Date to year and Area to character
+  mutate(
+    Date = year(Date),
+    `Area, production and farm value of potatoes` = as.character(`Area, production and farm value of potatoes`)
+  ) %>%
+  
+  # Keep only the latest year available
+  filter(
+    Date >= max(Date, na.rm = TRUE) - 11
+  ) %>%
+  
+  # Keep only British Columbia
+  filter(
+    GEO == "British Columbia"
+  ) %>%
+  
+  
+  # Filter only for harvested area
+  filter(
+    `Area, production and farm value of potatoes` == "Harvested area"
+  ) %>%
+  
+  # Convert acres to hectares
+  mutate(
+    val_norm = val_norm * 0.404686
+  ) %>%
+  
+  # Rename variables
+  rename(
+    Hectares = val_norm
+  ) %>%
+  
+  # Keep only required variables
+  select(Date, GEO, Hectares)
+
+# Add commodity variable 
+PotatoesArea$Commodity <- "Fresh potatoes"
+
 # Load the Field Vegetable table
 FieldVegArea <- get_cansim("32-10-0365") 
 
@@ -194,6 +238,12 @@ FieldVegArea <- FieldVegArea %>%
   
   # Keep only required variables
   select(Date, GEO, Commodity, Hectares)
+
+# Append Potatoes and Field Veg
+FieldVegArea <- bind_rows(
+  PotatoesArea,
+  FieldVegArea)
+
 
 (toc)
 ```
@@ -324,9 +374,7 @@ GHFruitVegArea <- GHFruitVegArea %>%
   
   # Exclude these commodities
   filter(
-    !Commodity %in% c(
-      "Fresh microgreens and shoots",
-      "Fresh sprouts")
+    !Commodity == "Fresh sprouts"
   ) %>%
 
   # Convert square feet to acres
@@ -616,7 +664,7 @@ rm(FieldFloricultureArea,
 toc()
 ```
 
-## I. Potatoes
+## I. Cannabis & Christmas Trees
 
 This chunk of code pulls the remaining commodities from the main FCR table, [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501), into a DF called AllOtherCropsFCR. After cleaning, it is appended/row bind with all other crop DFs (**AllFiledVegFCR, AllFruitsFCR, AllGHFruitFCR, AllGHVegFCR, AllOtherCropsFCR**) into the DF called **AllCropsFCR**.
 
@@ -624,21 +672,21 @@ Other crops is calculated as the difference between Total crop receipts and all 
 
 Note that deferred grain receipts are added rather than subtracted because its a negative number.
 
-```{r Potatoes}
+```{r ChristmasTree}
 
-# Start timer
 tic()
 
-# Load the Potatoes Area table
-PotatoesArea <- get_cansim("32-10-0358") 
+# Load the Christmas Tree Area table
+ChristmasTreeArea <- get_cansim("32-10-0249") 
 
-# Clean the PotatoesArea dataframe
-PotatoesArea <- PotatoesArea %>%
+# Clean the ChristmasTreeArea dataframe
+ChristmasTreeArea <- ChristmasTreeArea %>%
   
-  # Convert Date to year and Area to character
+  # Convert Date to year, Estimates amd Area to character
   mutate(
     Date = year(Date),
-    `Area, production and farm value of potatoes` = as.character(`Area, production and farm value of potatoes`)
+    `Land use` = as.character(`Land use`),
+    `Unit of measure` = as.character(`Unit of measure`)
   ) %>%
   
   # Keep only the latest year available
@@ -648,30 +696,43 @@ PotatoesArea <- PotatoesArea %>%
   
   # Keep only British Columbia
   filter(
-    GEO == "British Columbia"
+    GEO == "British Columbia [PR590000000]"
   ) %>%
   
-
-  # Filter only for harvested area
+  # Filter only for area
   filter(
-    `Area, production and farm value of potatoes` == "Harvested area"
+    `Unit of measure` == "Hectares"
   ) %>%
   
-  # Convert acres to hectares
-  mutate(
-    val_norm = val_norm * 0.404686
+  # Filter only for area
+  filter(
+    `Land use` == "Christmas trees grown for sale"
   ) %>%
   
   # Rename variables
   rename(
-    Hectares = val_norm
+    Hectares = val_norm,
+    Commodity = `Land use`
+  ) %>%
+  
+  # Rename commodity categories
+  mutate(
+    Commodity = case_when(
+      Commodity == "Christmas trees grown for sale" ~ "Christmas trees",
+      TRUE ~ Commodity
+    )
+  ) %>%
+  
+  # Rename GEO categories
+  mutate(
+    GEO = case_when(
+      GEO == "British Columbia [PR590000000]" ~ "British Columbia",
+      TRUE ~ GEO
+    )
   ) %>%
   
   # Keep only required variables
-  select(Date, GEO, Hectares)
-
-# Add commodity variable 
-PotatoesArea$Commodity <- "Fresh potatoes"
+  select(Date, GEO, Hectares, Commodity)
 
 toc()
 ```
@@ -792,7 +853,7 @@ Crops_Crosswalk <- tribble(
   "Crops", "Field vegetables", "Fresh parsnips",
   "Crops", "Field vegetables", "Fresh peppers",
   "Crops", "Field vegetables", "Fresh pumpkins",
-  "Crops", "Field vegetables", "Fresh radishes ",
+  "Crops", "Field vegetables", "Fresh radishes",
   "Crops", "Field vegetables", "Fresh rutabagas and turnips",
   "Crops", "Field vegetables", "Fresh rhubarb",
   "Crops", "Field vegetables", "Fresh spinach",
@@ -864,7 +925,7 @@ All_CropsArea <- bind_rows(
   GHFruitVegArea,
   MushroomArea,
   NurseryArea,
-  PotatoesArea,
+  ChristmasTreeArea,
   SodArea)
 
 # left join with reference table
@@ -913,9 +974,9 @@ BC_FCR_Detailed <- BC_FCR_Detailed %>%
   )
 
 # Join area and value data and calculate value per hectare
-Value_PerHectare <- All_CropsArea %>%
+Value_PerHectare <- BC_FCR_Detailed %>%
   left_join(
-    BC_FCR_Detailed,
+    All_CropsArea,
     by = c("Commodity", "Date", "Sector", "Group", "GEO")
   ) %>%
   

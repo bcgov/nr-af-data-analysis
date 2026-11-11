@@ -295,6 +295,7 @@ FieldVegFCR <- FieldVegFCR %>%
     Commodity = case_when(
       Commodity == "Fresh cucumbers" ~ "Fresh cucumbers and fresh gherkins (all varieties)",
       Commodity == "Other fresh vegetables" ~ "Other field vegetables",
+      Commodity == "Fresh radishes " ~ "Fresh radishes",
       TRUE ~ Commodity
     )
   ) %>%
@@ -390,7 +391,7 @@ AllFieldVegFCR <- AllFieldVegFCR %>%
            `Fresh eggplants (except Chinese eggplants)` -           
            `Fresh tomatoes` -
            `Fresh peppers` -
-           `Fresh radishes ` -
+           `Fresh radishes` -
            `Fresh rhubarb` -
            `Fresh rutabagas and turnips` -
            `Fresh watermelons` -
@@ -1305,7 +1306,7 @@ AllCropsFCR <- AllCropsFCR %>%
            `Fresh eggplants (except Chinese eggplants)` -           
            `Fresh tomatoes` -
            `Fresh peppers` -
-           `Fresh radishes ` -
+           `Fresh radishes` -
            `Fresh rhubarb` -
            `Fresh rutabagas and turnips` -
            `Fresh watermelons` -
@@ -1465,7 +1466,7 @@ Commodity_Crosswalk <- tribble(
   "Crops", "Field vegetables", "Fresh parsnips",
   "Crops", "Field vegetables", "Fresh peppers",
   "Crops", "Field vegetables", "Fresh pumpkins",
-  "Crops", "Field vegetables", "Fresh radishes ",
+  "Crops", "Field vegetables", "Fresh radishes",
   "Crops", "Field vegetables", "Fresh rutabagas and turnips",
   "Crops", "Field vegetables", "Fresh rhubarb",
   "Crops", "Field vegetables", "Fresh spinach",
