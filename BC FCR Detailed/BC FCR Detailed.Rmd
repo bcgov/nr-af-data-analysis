@@ -15,7 +15,7 @@ This R Markdown document is an annotated set of scripts to combine multiple Stat
 
 For more information, visit the ReadMe file at <https://github.com/bcgov/nr-af-data-analysis/tree/main/BC%20FCR%20Detailed>. Contact [alstats\@gov.bc.ca](mailto:alstats@gov.bc.ca) for any questions.
 
-There are 6 tables to be loaded from STC. The main FCR table with aggregated data is [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501) and the other 5 provide more detailed FCR breakdown:
+There are 7 tables to be loaded from STC. The main FCR table with aggregated data is [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501) and the other 6 provide more detailed FCR breakdown:
 
 - [Table 32-10-0365-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210036501) Area, production and farm gate value of marketed vegetables
 
@@ -29,7 +29,7 @@ There are 6 tables to be loaded from STC. The main FCR table with aggregated dat
 
 - [Table: 32-10-0356-01](https://www150.statcan.gc.ca/t1/tbl1/en/cv.action?pid=3210035601) Area, production and sales of mushrooms
 
-This script generally loads the above tables into the environment based on the specified date cut-off then, using a specified set of vectors, filters the data frame (or DF) and cleans it Specific steps are:
+This script generally loads the above tables into the environment and the data frame (or DF) is filtered for the last 10 years, British Columbia, and certain commodities. A high-level overview would be:
 
 A.  Set-up and load library
 
@@ -75,10 +75,6 @@ p_load(cansim,
        stringr,
        zoo,
        tibble)
-
-# Specify date cut-off
-date_cutoff <- year("2014-01-01")
-
 
 ```
 
@@ -191,6 +187,8 @@ toc()
 ```
 
 ## C. Field Vegetable FCR
+
+The field vegetable FCR entails more stitching of various tables:
 
 1.  Load the mushroom estimates ([Table: 32-10-0356-01](https://www150.statcan.gc.ca/t1/tbl1/en/cv.action?pid=3210035601) in DF called **MushroomFCR**) noting that the "Fresh vegetables - field" total from [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501) includes mushroom receipts.
 
@@ -419,6 +417,8 @@ rm(FCR_TotalFieldVeg, FieldVegFCR, MushroomFCR)
 
 ## D. Fruits FCR
 
+The fruits chunk of code slightly varies because a more updated breakdown of certain fruits is available from the main FCR table, [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501). The steps are:
+
 1.  After loading detailed fruits FCR breakdown into DF called **FruitsFCR** from [Table 32-10-0364-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210036401), load the total fresh fruits, apples, blueberries, strawberries, grapes and cranberries from the main FCR table ([Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501)) into **FCR_TotalFruits** DF by appending both DFs to each other in a new DF called **AllFruitsFCR**.That DF is then pivoted wider to calculate "Other fresh fruits" by subtracting all broken down fruit FCR estimates from the total fruit FCR.
 
 2.  Fresh apples, blueberries, cranberries, grapes and strawberries come from the main FCR table ([Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501)) rather than [Table 32-10-0364-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210036401) because the latter is released earlier and the former are re-estimates from STC.
@@ -586,9 +586,7 @@ toc()
 
 ## E. Greenhouse Fruits & Vegetables FCR
 
-1.  The only greenhouse fruit with detailed FCR estimate is strawberries, or vector v1271897860 so the first part of the chunk of code below builds the AllGHFruitFCR table using that vector.
-
-2.  The next part is to load the detailed GH vegetable breakdown from [Table 32-10-0456-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210045601) and we replace "fresh" with GH to distinguish from field-grown vegetables. The total GH vegetables is pulled from main FCR table, [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501), then appended with the detailed GH vegetables. Other GH vegetables is then calculated as the difference between total GH vegetables from the main FCR table, [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501) and the sum of GH vegetable breakdown from [Table 32-10-0456-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210045601).
+The next part is to load the detailed GH fruit vegetable breakdown from [Table 32-10-0456-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210045601) and we replace "fresh" with GH to distinguish from field-grown fruits and vegetables. The total GH fruits vegetables is pulled from main FCR table, [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501), then appended with the detailed GH fruits & vegetables. Other GH fruits & vegetables is then calculated as the difference between total GH fruits & vegetables from the main FCR table, [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501), and the sum of GH fruits & vegetable breakdown from [Table 32-10-0456-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210045601).
 
 ```{r GHFruitVeg}
 
@@ -727,6 +725,8 @@ toc()
 ```
 
 ## F. Floriculture FCR
+
+Only data on field floriculture is available so we deduce greenhouse floriculture with the following steps:
 
 1.  Load and clean floriculture field FCR from annual greenhouse survey [Table 32-10-0452-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210045201)) into the DF called **FloricultureFieldFCR**.
 
@@ -881,6 +881,8 @@ rm(FCR_Floriculture, FloricultureFieldFCR)
 
 ## G. Sod FCR
 
+Sod estimates from the main FCR table, [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501), is suppressed for some of the years. A more complete data set can be found from the Annual Greenhouse survey through the following steps:
+
 1.  Starting by loading sodFCR from the Annual Greenhouse Survey, Table: 32-10-0034-01 into the DF called **AllSodFCR**.
 
 2.  Filter only for "Total sod sales" and "Gross revenue from sod grown"
@@ -961,21 +963,19 @@ AllSodFCR$Commodity <- "Sod"
 
 ## H. Nursery FCR
 
-1.  The DF **FCR_GH_Floriculture_Nursery** is loaded from [Table 32-10-0246-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210024601) and grouped by summing total value to a DF called **FCR_GH_Floriculture_Nursery** then assigned commodity called "GH Floriculture & Nursery".
+Total nursery FCR is suppressed for some years in the main FCR table, [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501) and is calculated from total floriculture, nursery and sod using known sod and floriculture sub-totals. In addition, GH nursery can be calculated using the Annual Greenhouse Survey's estimates of total GH value across GH floriculture and GH nursery. By deduction, field nursery = total nursery less GH nursery:
 
-2.  Create a new DF called **GHFloricultureFCR** by filtering **AllFloricultureFCR** for only GH Floriculture.
+1.  Load total floriculture, nursery and sod from [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501) into DF called **FCR_FNS** along with floriculture total. Append sod total and calculate nursery as the difference between total floriculture, nursery and sod and the sum of sod and floriculture in DF called **AllNurseryFCR**.
 
-3.  Load FCR for GH floriculture and nursery into DF called **FCR_GH_Floriculture_Nursery** from
+2.  The DF **FCR_GH_Floriculture_Nursery** is loaded from [Table 32-10-0246-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210024601) and grouped by summing total value to a DF called **FCR_GH_Floriculture_Nursery** then assigned commodity called "GH Floriculture & Nursery".
 
-4.  Bind rows/append DF **FCR_GH_Floriculture_Nursery** and **GHFloricultureFCR** into a new DF called **FCR_GHNursery**, pivot wide then calculate GH floriculture from Floriculture products (except flowers and seeds) less Field-grown cut flowers. In other words:
+3.  Create a new DF called **GHFloricultureFCR** by filtering **AllFloricultureFCR** for only GH Floriculture.
 
-    GH floriculture = Total floriculture - Field-grown floriculture
-
-5.  Bind rows/append DF **GHFloricultureFCR** with DF **FCR_GH_Floriculture_Nursery** and pivot wide to a new DF called **FCR_GHNursery** to calculate GH Nursery from GH floriculure & nursery less GH Floriculture or in other words:
+4.  Bind rows/append DF **GHFloricultureFCR** with DF **FCR_GH_Floriculture_Nursery** and pivot wide to a new DF called **FCR_GHNursery** to calculate GH Nursery from GH floriculure & nursery less GH Floriculture or in other words:
 
     GH Nursery = GH Floriculture & Nursery - GH Floriculture
 
-6.  Append All Nursery (DF called **AllNurseryFCR**) with GH nursery (DF called **FCR_GHNursery**), pivot wide and calculate field nursery (column called **Field Nursery**) as difference between all nusery less GH nursery. Pivot the entire DF long into **AllNurseryFCR**
+5.  Append the DF called **AllNurseryFCR** with **FCR_GHNursery**), pivot wide and calculate field nursery (column called **Field Nursery**) as difference between all nursery less GH nursery. Drop total nursery column and pivot the entire DF long into **AllNurseryFCR**
 
 ```{r Nursery}
 
@@ -1173,11 +1173,13 @@ toc()
 
 ## I. Other Crops FCR
 
-This chunk of code pulls the remaining commodities from the main FCR table, [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501), into a DF called AllOtherCropsFCR. After cleaning, it is appended/row bind with all other crop DFs (**AllFiledVegFCR, AllFruitsFCR, AllGHFruitFCR, AllGHVegFCR, AllOtherCropsFCR**) into the DF called **AllCropsFCR**.
+A final residual that needs to be calculated is for all other crops through the following steps:
 
-Other crops is calculated as the difference between Total crop receipts and all other crop breakdowns and saved into **AllCropsFCR**\$Other crops.
+1.  Pull the remaining commodities from the main FCR table, [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501), into a DF called AllOtherCropsFCR.
 
-Note that deferred grain receipts are added rather than subtracted because its a negative number.
+2.  After cleaning, it is appended/row bind with all other crop DFs (**AllFiledVegFCR, AllFruitsFCR, AllGHFruitVegFCR, AllOtherCropsFCR**) into the DF called **AllCropsFCR**.
+
+3.  Other crops is calculated as the difference between Total crop receipts and all other crop breakdowns and saved into **AllCropsFCR**\$Other crops.
 
 ```{r Other Crops FCR}
 

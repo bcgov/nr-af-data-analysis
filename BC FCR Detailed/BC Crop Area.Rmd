@@ -11,13 +11,13 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## BC Crop Area
 
-This R Markdown document is an annotated set of scripts to combine multiple Statistics Canada (STC) tables related to FCR into one clean file saved in the team's SharePoint data library.
-
-For more information, visit the ReadMe file at <https://github.com/bcgov/nr-af-data-analysis/tree/main/BC%20FCR%20Detailed>. Contact [alstats\@gov.bc.ca](mailto:alstats@gov.bc.ca) for any questions.
-
-There are 6 tables to be loaded from STC. The main FCR table with aggregated data is [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501) and the other 5 provide more detailed FCR breakdown:
+This R Markdown document is an annotated set of scripts to calculate BC's average annual crop value per area by combining multiple Statistics Canada (STC) tables into one clean file saved in the team's SharePoint data library. The following are tables used in the script:
 
 - [Table 32-10-0365-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210036501) Area, production and farm gate value of marketed vegetables
+
+- [Table: 32-10-0356-01](https://www150.statcan.gc.ca/t1/tbl1/en/cv.action?pid=3210035601) Area, production and sales of mushrooms
+
+- [Table: 32-10-0358-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210035801) Area, production and farm value of potatoes
 
 - [Table 32-10-0364-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210036401) Area, production and farm gate value of marketed fruits
 
@@ -27,31 +27,13 @@ There are 6 tables to be loaded from STC. The main FCR table with aggregated dat
 
 - [Table 32-10-0452-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210045201) Estimates of field-grown cut flowers area, production and sales
 
-- [Table: 32-10-0356-01](https://www150.statcan.gc.ca/t1/tbl1/en/cv.action?pid=3210035601) Area, production and sales of mushrooms
+- [Table: 32-10-0249-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210024901) Land use, Census of Agriculture, 2021 (for Christmas trees)
 
-This script generally loads the above tables into the environment based on the specified date cut-off then, using a specified set of vectors, filters the data frame (or DF) and cleans it Specific steps are:
-
-A.  Set-up and load library
-
-B.  Load detailed field vegetable FCR breakdown and calculate "Other field vegetables" from total field vegetable in main FCR table as residual
-
-C.  Load detailed fruit FCR breakdown and calculate "Other fresh fruits" from total fruits in main FCR table as residual
-
-D.  Load detailed greenhouse fruits & veg and calculate "Other GH veg" from total GH veg in main FCR table as residual. Note that Strawberries are excluded from total GH veg and considered a GH fruit
-
-E.  Load sod from the main FCR table and interpolate linearly because 2018 is suppressed. Then load the total floriculture, nursery and sod form the main FCR table as well as floriculture and append the interpolated sod table to calculate nursery total (also suppressed in 2018). Load floriculture field and subtract from total floriculture to calculate GH floriculture. Load GH floriculture and nursery, subtract GH floriculture to calculate GH nursery then subtract GH nursery from total nursery to get field nursery estimate.
-
-F.  Load the main FCR table for other commodities that do not have further breakdown and calculate "other crops" as the difference between total crop FCR less all other breakdowns from **AllFiledVegFCR, AllFruitsFCR, AllGHFruitFCR, AllGHVegFCR, AllOtherCropsFCR** and save into **AllCropsFCR**
-
-G.  Hard code the FCR reference table for crosswalk
-
-H.  Append all tables (**AllCropsFCR**) then left-join with the crosswalk
-
-I.  Write .csv and save into data library
+- [Table: 32-10-0359-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210035901) Estimated areas, yield, production, average farm price and total farm value of principal field crops, in metric and imperial units
 
 ## A. Set-up and load library
 
-In addition to loading necessary packages from the library, this chunk of code also specifies the date cut-off by which the data will be filtered by.
+Load necessary packages
 
 ```{r Set-up}
 
@@ -65,18 +47,57 @@ p_load(cansim,
        tictoc,
        splitstackshape,
        stringr,
-       zoo,
        tibble)
 
 ```
 
-## B. Mushroom Area
+## B. BC Detailed FCR
 
-Insert transformations here
-
-\# Add commodity variable
+A separate R markdown (RMD) was developed to stitch and calculate various farm cash receipt estimates across STC tables for use in our unit. This chunk loads that data into DF called **BC_FCR_Detailed** and filtered for only crop commodities. The values will serve as the numerator to calculate value per area for each crop type.
 
 ```{r}
+# Set working directory
+setwd("C:/Users/lebautis/Government of BC/SICI Data Library Subsite - Unpublished Data")
+
+# Load detailed BC FCR data
+BC_FCR_Detailed <- fread(
+  "C:/Users/lebautis/Government of BC/SICI Data Library Subsite - Unpublished Data/BC_FCR_Detailed.csv"
+)
+
+# Drop selected sectors and commodities
+BC_FCR_Detailed <- BC_FCR_Detailed %>%
+  
+  # Exclude livestock and direct program payments
+  filter(
+    !Sector %in% c(
+      "Livestock",
+      "Direct program payments"
+    )
+  ) %>%
+  
+  # Exclude deferred grain receipt commodities
+  filter(
+    !Commodity %in% c(
+      "Liquidation of deferred grain receipts",
+      "Deferred grain receipts"
+    )
+  )
+```
+
+## C. Field Vegetable Area
+
+1.  Load the mushroom estimates ([Table: 32-10-0356-01](https://www150.statcan.gc.ca/t1/tbl1/en/cv.action?pid=3210035601) in DF called **MushroomArea**). Filter for BC, the last 10 years and area harvested (in square feet). Convert square feet to hectares and rename the value variable to "Hectares" then drop any unwanted variable
+
+2.  Similar to mushrooms, load potatoes (Table: [32-10-0358-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210035801) in DF called PotatoesArea) but no conversion to hectares required which is how it is reported
+
+3.  Load detailed field veg area([Table 32-10-0456-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210045601) in DF called **FieldVegArea**) and clean like mushrooms & potatoes. Fresh cabbage should equal Fresh regular cabbage + Fresh Chinese cabbage + Fresh kale but it is not always the case. For now, only Fresh cabbage is loaded but additional work to calculate "other cabbage" could be done. Similarly, Fresh radishes should equal Fresh radishes (except Asian radishes) + Fresh Asian radishes and other radishes need to be calculated for future iterations of this code to show that breakdown.
+
+4.  Rename commodities to match commodity descriptions in **BC_FCR_Detailed** such as Fresh cucumbers to Fresh cucumbers and fresh gherkins (all varieties) and Other fresh vegetables to Other field vegetables.
+
+5.  Append/row bind mushrooms, potatoes and field veg area DFs into **FieldVegArea**
+
+```{r FieldVeg}
+tic()
 
 # Load the Mushroom table
 MushroomArea <- get_cansim("32-10-0356")
@@ -121,22 +142,6 @@ MushroomArea <- MushroomArea %>%
 
 # Add commodity variable 
 MushroomArea$Commodity <- "Fresh & processed mushrooms"
-```
-
-## C. Field Vegetable Area
-
-1.  Load the mushroom estimates ([Table: 32-10-0356-01](https://www150.statcan.gc.ca/t1/tbl1/en/cv.action?pid=3210035601) in DF called **MushroomFCR**)
-
-2.  After loading detailed field vegetable FCR breakdown, load the total field veg from the main FCR table and and calculate "Other field vegetables". The calculation is done by appending **MushroomFCR** and detailed field veg estimates ([Table 32-10-0456-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210045601) in DF called **FieldVegFCR**) with total field veg estimate ([Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501) in DF called **FCR_TotalFieldVeg**) to create a new DF called **AllFieldVeg**.
-
-3.  The DF **AllFieldVeg** is then pivoted wider and "Other field vegetables" is calculated by subtracting the sum of broken down field vegetable estimates from the total field vegetable estimate.
-
-4.  The total field vegetable estimate column is then dropped to avoid double counting and the entire **AllFieldVeg** DF is pivoted longer for appending with other DFs to create the full detailed FCR DF.
-
-5.  Fresh cabbage should equal Fresh regular cabbage + Fresh Chinese cabbage + Fresh kale but it is not always the case. For now, only Fresh cabbage is loaded but additional work to calculate "other cabbage" could be done. Similarly, Fresh radishes should equal Fresh radishes (except Asian radishes) + Fresh Asian radishes and other radishes need to be calculated for future iterations of this code to show that breakdown.
-
-```{r FieldVeg}
-tic()
 
 # Load the Potatoes Area table
 PotatoesArea <- get_cansim("32-10-0358") 
@@ -241,24 +246,22 @@ FieldVegArea <- FieldVegArea %>%
 
 # Append Potatoes and Field Veg
 FieldVegArea <- bind_rows(
+  MushroomArea,
   PotatoesArea,
   FieldVegArea)
 
+rm(MushroomArea, PotatoesArea)
 
 (toc)
 ```
 
 ## D. Fruits Area
 
-1.  After loading detailed fruits FCR breakdown into DF called **FruitsFCR** from [Table 32-10-0364-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210036401), load the total fresh fruits, apples, blueberries, strawberries, grapes and cranberries from the main FCR table ([Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501)) into **FCR_TotalFruits** DF by appending both DFs to each other in a new DF called **AllFruitsFCR**.That DF is then pivoted wider to calculate "Other fresh fruits" by subtracting all broken down fruit FCR estimates from the total fruit FCR.
+1.  Load detailed fruits area into DF called **FruitsArea** from [Table 32-10-0364-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210036401) and cleaned like field vegetables for BC and estimates for area
 
-2.  Fresh apples, blueberries, cranberries, grapes and strawberries come from the main FCR table ([Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501)) rather than [Table 32-10-0364-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210036401) because the latter is released earlier and the former are re-estimates from STC.
+2.  Filter out highbush vs. lowbush blueberries and labrusca vs. vinifera grapes because FCR is at the higher, more aggregated levels of blueberries and grapes
 
-3.  Note that currants, haskaps and fresh sour cherries are not loaded because it causes the "Other fresh fruits" to be negative for certain years and are counted as "other fresh fruits".
-
-4.  Breakdown between highbush vs. lowbush blueberries and labrusca vs. vinifera grapes not yet loaded and residual will need to be calculated from total blueberries and total grapes
-
-Similar to field vegetables, the total fruits column is dropped and then **AllFRuitsFCR** is pivoted long for appending with other detailed FCR tables.
+3.  Replace Other fresh fruit, n.e.c. with Other fresh fruits and rename the value column with "Hectares"
 
 ```{r Fruits}
 
@@ -330,9 +333,9 @@ toc()
 
 ## E. Greenhouse Fruits & Vegetables Area
 
-1.  The only greenhouse fruit with detailed FCR estimate is strawberries, or vector v1271897860 so the first part of the chunk of code below builds the AllGHFruitFCR table using that vector.
+1.  Load the detailed GH vegetable breakdown from [Table 32-10-0456-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210045601) and we replace "fresh" with GH to distinguish from field-grown vegetables.
 
-2.  The next part is to load the detailed GH vegetable breakdown from [Table 32-10-0456-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210045601) and we replace "fresh" with GH to distinguish from field-grown vegetables. The total GH vegetables is pulled from main FCR table, [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501), then appended with the detailed GH vegetables. Other GH vegetables is then calculated as the difference between total GH vegetables from the main FCR table, [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501) and the sum of GH vegetable breakdown from [Table 32-10-0456-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210045601).
+2.  Filter out fresh sprouts which is always suppressed for BC and convert square feet to hectares
 
 ```{r GHFruitVeg}
 
@@ -367,7 +370,7 @@ GHFruitVegArea <- GHFruitVegArea %>%
     Estimates == "Square feet"
   ) %>%
   
-  # Filter only for acres
+  # Filter only for hectares
   filter(
     `Production and value` == "Area harvested"
   ) %>%
@@ -377,7 +380,7 @@ GHFruitVegArea <- GHFruitVegArea %>%
     !Commodity == "Fresh sprouts"
   ) %>%
 
-  # Convert square feet to acres
+  # Convert square feet to hectares
   mutate(
     val_norm = val_norm / 107639.104
   ) %>%
@@ -399,7 +402,7 @@ toc()
 
 ## F. Sod Area
 
-Starting by loading sod (vector v44179596) FCR from the main FCR table, [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501) into the DF called **FCR_Sod**. This is then cleaned and renamed to **AllSodFCR**. Missing or suppressed values are then linearly interpolated (see note below).
+Start by loading Table 32-10-0034 sod into the DF called **SodArea** and clean by filtering to BC and estimates in hectares. Since sod is the only commodity, a commodity variable is introduced with values = "Sod"
 
 ```{r Sod}
 
@@ -448,31 +451,9 @@ SodArea <- SodArea %>%
 SodArea$Commodity <- "Sod"
 ```
 
-## G. Nursery 
+## G. Nursery
 
-1.  Then, load the total floriculture, nursery and sod, Floriculture and nursery products, and sod from the main FCR table, [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501), into the **FCR_FNS** DF which is pivoted wider to calculate nursery total as the difference between the total less floriculture, and sod and saved as the DF called **AllNurseryFCR**.
-
-2.  Using the DF **FCR_FNS**, create a new DF by keeping only Floriculture products (except flower seeds), . Load FloricultureField (vector v112281450 from [Table 32-10-0452-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210045201)) into a DF called **FloricultureField** and append/bind rows in **FCR_FNS** and **FloricultureField** into a DF called **AllFloricultureFCR**.
-
-3.  Linearly predict 2015 field floriculture because the data set only goes back to 2016. Then, calculate [GH floriculture]`=[`Floriculture products (except flower seeds)]`-[`Field-grown cut flowers].
-
-4.  The DF **FCR_GH_Floriculture_Nursery** is loaded from [Table 32-10-0246-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210024601) and grouped by summing total value to a DF called **FCR_GH_Floriculture_Nursery** then assigned commodity called "GH Floriculture & Nursery".
-
-5.  Create a new DF called **GHFloricultureFCR** by filtering **AllFloricultureFCR** for only GH Floriculture.
-
-6.  Load FCR for GH floriculture and nursery into DF called **FCR_GH_Floriculture_Nursery** from
-
-7.  Bind rows/append DF **FCR_GH_Floriculture_Nursery** and **GHFloricultureFCR** into a new DF called **FCR_GHNursery**, pivot wide then calculate GH floriculture from Floriculture products (except flowers and seeds) less Field-grown cut flowers. In other words:
-
-    GH floriculture = Total floriculture - Field-grown floriculture
-
-8.  Bind rows/append DF **GHFloricultureFCR** with DF **FCR_GH_Floriculture_Nursery** and pivot wide to a new DF called **FCR_GHNursery** to calculate GH Nursery from GH floriculure & nursery less GH Floriculture or in other words:
-
-    GH Nursery = GH Floriculture & Nursery - GH Floriculture
-
-9.  Append All Nursery (DF called **AllNurseryFCR**) with GH nursery (DF called **FCR_GHNursery**), pivot wide and calculate field nursery (column called **Field Nursery**) as difference between all nusery less GH nursery. Pivot the entire DF long into **AllNurseryFCR**
-
-A note on time series interpolation: This method estimates missing values based on trends in the available data where up to 2 years of data in the same category are suppressed but values exist before and after. Linear interpolation is used to address missing values for Nursery and Sod. The following code creates the column `value_interp`, which duplicates `val_norm` and estimates missing values for up to 2 years of consecutive missing data in each category. Currently, this step is only done for floriculture, nursery and sod because 2018 values for nursery and sod are suppressed.
+Start by loading Table 32-10-0029 and cleaning the data by year, BC only and for estimates = hectares and area for total field and container area then rename the variables to match BC Detailed FCR commodity names.
 
 ```{r Nursery}
 
@@ -536,6 +517,10 @@ toc()
 ```
 
 ## H. Floriculture
+
+1.  GH floriculture area is pulled from Table 32-10-0019 and filtered for most recent 10 years, British Columbia, Estimates = square feet, type of greenhouse operations and producer type.
+2.  Convert square feet to hectares and rename the value column to hectares along with the commodity and drop any unused columns
+3.  Similar steps apply for field floriculture coming from table 32-10-0452
 
 ```{r Floriculture}
 
@@ -664,13 +649,9 @@ rm(FieldFloricultureArea,
 toc()
 ```
 
-## I. Cannabis & Christmas Trees
+## I. Christmas Trees
 
-This chunk of code pulls the remaining commodities from the main FCR table, [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501), into a DF called AllOtherCropsFCR. After cleaning, it is appended/row bind with all other crop DFs (**AllFiledVegFCR, AllFruitsFCR, AllGHFruitFCR, AllGHVegFCR, AllOtherCropsFCR**) into the DF called **AllCropsFCR**.
-
-Other crops is calculated as the difference between Total crop receipts and all other crop breakdowns and saved into **AllCropsFCR**\$Other crops.
-
-Note that deferred grain receipts are added rather than subtracted because its a negative number.
+Christmas tree area is only available for 2021 from the Census of Agriculture's table 32-10-0249. Similar cleaning steps are done in addition to renaming British Columbia to drop the Census of Agriculture geography code.
 
 ```{r ChristmasTree}
 
@@ -687,11 +668,6 @@ ChristmasTreeArea <- ChristmasTreeArea %>%
     Date = year(Date),
     `Land use` = as.character(`Land use`),
     `Unit of measure` = as.character(`Unit of measure`)
-  ) %>%
-  
-  # Keep only the latest year available
-  filter(
-    Date >= max(Date, na.rm = TRUE) - 10
   ) %>%
   
   # Keep only British Columbia
@@ -739,6 +715,8 @@ toc()
 
 ## J. Field Crops Area
 
+Field crops area come from table 32-10-0359 and is filtered slightly differently for the last 11 years and not the most recent year because it is released in January of each year to match the years for the other DFs. The commodity names also needed to be updated to match Detailed FCR table.
+
 ```{r FieldCrops}
 
 # Start timer
@@ -757,7 +735,7 @@ FieldCropsArea <- FieldCropsArea %>%
     `Type of crop` = as.character(`Type of crop`)
   ) %>%
   
-  # Keep the latest complete year and 10 years prior
+  # Keep the latest complete year and 11 years prior and not the most recent year
   filter(
     Date >= max(Date, na.rm = TRUE) - 11,
     Date <= max(Date, na.rm = TRUE) - 1
@@ -812,7 +790,7 @@ toc()
 
 ## K. Crosswalk Reference Table
 
-The crosswalk reference table is meant to group certain commodities into broader commodity groups such as "fresh fruits" and "field vegetables". They are currently hard-coded given the shorter length of the list in the following chunk.
+Similar to the Detailed FCR table, the crosswalk reference table is meant to group certain commodities into broader commodity groups such as "fresh fruits" and "field vegetables". They are currently hard-coded given the shorter length of the list in the following chunk and only includes crop commodities.
 
 ```{r Crosswalk}
 # Hard code the reference table
@@ -912,7 +890,9 @@ Crops_Crosswalk <- tribble(
 
 ## L. Append All Tables and Join Crosswalk
 
-Append AllCropsFCR, AllLIvestockFCR and AllDirectPaymentsFCR into a DF called All_FCR_Detailed.
+1.  Append all the crop area tables into a DF called All_CropsArea.
+
+2.  Join All_CropsArea DF with BC_FCR_Detailed DF and calculate a new column called ValuePerHectare by dividing the Value column against the Hectares column
 
 ```{r Append}
 
@@ -923,7 +903,6 @@ All_CropsArea <- bind_rows(
   FloricultureArea,
   FruitsArea,
   GHFruitVegArea,
-  MushroomArea,
   NurseryArea,
   ChristmasTreeArea,
   SodArea)
@@ -931,47 +910,6 @@ All_CropsArea <- bind_rows(
 # left join with reference table
 All_CropsArea <- All_CropsArea %>%
   left_join(Crops_Crosswalk, by = "Commodity")
-
-```
-
-## M. Write .csv and save into data library
-
-As of August 2026, SITS cannot yet directly connect to a SharePoint URL to access the shared Unpublished Data library. The interim workaround is to sync that library to the user's Desktop and change the URL manually. Remember to replace "\\" with "/" and note that the timeout settings is 10 mins because the zip file is large and the default timeout of 1 min is insufficient to download and unzip the file.
-
-Until BC Gov admins grant access, SharePoint files cannot easily be pulled using the **M365** R package. The temporary workaround is to sync the Unpublished Data Library with each user's desktop which needs to be updated in the code:
-
-```         
-"C:/Users/[replace with IDIR]/Government of BC/SICI Data Library Subsite - Unpublished Data"
-```
-
-```{r Write}
-
-# Set working directory
-setwd("C:/Users/lebautis/Government of BC/SICI Data Library Subsite - Unpublished Data")
-
-# Load detailed BC FCR data
-BC_FCR_Detailed <- fread(
-  "C:/Users/lebautis/Government of BC/SICI Data Library Subsite - Unpublished Data/BC_FCR_Detailed.csv"
-)
-
-# Drop selected sectors and commodities
-BC_FCR_Detailed <- BC_FCR_Detailed %>%
-  
-  # Exclude livestock and direct program payments
-  filter(
-    !Sector %in% c(
-      "Livestock",
-      "Direct program payments"
-    )
-  ) %>%
-  
-  # Exclude deferred grain receipt commodities
-  filter(
-    !Commodity %in% c(
-      "Liquidation of deferred grain receipts",
-      "Deferred grain receipts"
-    )
-  )
 
 # Join area and value data and calculate value per hectare
 Value_PerHectare <- BC_FCR_Detailed %>%
@@ -984,6 +922,23 @@ Value_PerHectare <- BC_FCR_Detailed %>%
   mutate(
     ValuePerHectare = Value / Hectares
   )
+
+```
+
+## M. Write .csv and save into data library
+
+As of November 2026, SITS cannot yet directly connect to a SharePoint URL to access the shared Unpublished Data library. The interim workaround is to sync that library to the user's Desktop and change the URL manually. Remember to replace "\\" with "/" and note that the timeout settings is 10 mins because the zip file is large and the default timeout of 1 min is insufficient to download and unzip the file.
+
+Until BC Gov admins grant access, SharePoint files cannot easily be pulled using the **M365** R package. The temporary workaround is to sync the Unpublished Data Library with each user's desktop which needs to be updated in the code:
+
+```         
+"C:/Users/[replace with IDIR]/Government of BC/SICI Data Library Subsite - Unpublished Data"
+```
+
+```{r Write}
+
+# Set working directory
+setwd("C:/Users/lebautis/Government of BC/SICI Data Library Subsite - Unpublished Data")
 
 # Write the csv file
 
