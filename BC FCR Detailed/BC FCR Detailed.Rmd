@@ -15,7 +15,7 @@ This R Markdown document is an annotated set of scripts to combine multiple Stat
 
 For more information, visit the ReadMe file at <https://github.com/bcgov/nr-af-data-analysis/tree/main/BC%20FCR%20Detailed>. Contact [alstats\@gov.bc.ca](mailto:alstats@gov.bc.ca) for any questions.
 
-There are 6 tables to be loaded from STC. The main FCR table with aggregated data is [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501) and the other 5 provide more detailed FCR breakdown:
+There are 7 tables to be loaded from STC. The main FCR table with aggregated data is [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501) and the other 6 provide more detailed FCR breakdown:
 
 - [Table 32-10-0365-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210036501) Area, production and farm gate value of marketed vegetables
 
@@ -29,29 +29,33 @@ There are 6 tables to be loaded from STC. The main FCR table with aggregated dat
 
 - [Table: 32-10-0356-01](https://www150.statcan.gc.ca/t1/tbl1/en/cv.action?pid=3210035601) Area, production and sales of mushrooms
 
-This script generally loads the above tables into the environment based on the specified date cut-off then, using a specified set of vectors, filters the data frame (or DF) and cleans it Specific steps are:
+This script generally loads the above tables into the environment and the data frame (or DF) is filtered for the last 10 years, British Columbia, and certain commodities. A high-level overview would be:
 
 A.  Set-up and load library
 
 B.  Load detailed Livestock FCR and calculate "Other livestock and livestock products" from total livestock in main FCR table as residual
 
-C.  Load detailed field vegetable FCR breakdown and calculate "Other field vegetables" from total field vegetable in main FCR table as residual
+C.  Load mushrooms and detailed field vegetable FCR breakdown to calculate "Other field vegetables" from total field vegetable in main FCR table as residual
 
 D.  Load detailed fruit FCR breakdown and calculate "Other fresh fruits" from total fruits in main FCR table as residual
 
-E.  Load detailed greenhouse fruits & veg and calculate "Other GH veg" from total GH veg in main FCR table as residual. Note that Strawberries are excluded from total GH veg and considered a GH fruit
+E.  Load detailed greenhouse (GH) fruits & veg and calculate "Other GH veg" from total GH veg in main FCR table as residual. Note that Strawberries are excluded from total GH veg and considered a GH fruit
 
-F.  Load sod from the main FCR table and interpolate linearly because 2018 is suppressed. Then load the total floriculture, nursery and sod form the main FCR table as well as floriculture and append the interpolated sod table to calculate nursery total (also suppressed in 2018). Load floriculture field and subtract from total floriculture to calculate GH floriculture. Load GH floriculture and nursery, subtract GH floriculture to calculate GH nursery then subtract GH nursery from total nursery to get field nursery estimate.
+F.  Load floriculture field and subtract from total floriculture to calculate GH floriculture.
 
-G.  Load the main FCR table for other commodities that do not have further breakdown and calculate "other crops" as the difference between total crop FCR less all other breakdowns from **AllFiledVegFCR, AllFruitsFCR, AllGHFruitFCR, AllGHVegFCR, AllOtherCropsFCR** and save into **AllCropsFCR**
+G.  Load sod from Annual Greenhouse Survey table and fill in suppressed data.
 
-H.  Load Direct Payments into **AllDirectPaymentsFCR** DF
+H.  Load the total floriculture, nursery and sod form the main FCR table as well as floriculture and append the sod table to calculate nursery total. Load GH floriculture and nursery, subtract GH floriculture to calculate GH nursery then subtract GH nursery from total nursery to get field nursery estimate.
 
-I.  Hard code the FCR reference table for crosswalk
+I.  Load the main FCR table for other commodities that do not have further breakdown and calculate "other crops" as the difference between total crop FCR less all other breakdowns from **AllFiledVegFCR, AllFruitsFCR, AllGHFruitVegFCR, AllOtherCropsFCR** and save into **AllCropsFCR**
 
-J.  Append all tables (**AllCropsFCR, AllLivestockFCR and AllDirectPaymentsFCR**) then left-join with the crosswalk
+J.  Load Direct Payments into **AllDirectPaymentsFCR** DF
 
-K.  Write .csv and save into data library
+K.  Hard code the FCR reference table for crosswalk
+
+L.  Append all tables (**AllCropsFCR, AllLivestockFCR and AllDirectPaymentsFCR**) then left-join with the crosswalk
+
+M.  Write .csv and save into data library
 
 ## A. Set-up and load library
 
@@ -72,13 +76,9 @@ p_load(cansim,
        zoo,
        tibble)
 
-# Specify date cut-off
-date_cutoff <- year("2014-01-01")
-
-
 ```
 
-## B. Livestock Breakdown
+## B. Livestock FCR
 
 Unlike other commodity groups, all detailed livestock data can be found in the main FCR table. However, the sum of those breakdowns exceed total livestock FCR so a new "Other livestock and livestock products" will need to be calculated as residual.
 
@@ -89,29 +89,62 @@ tic()
 # Load the Livestock table from the main FCR table 
 LivestockFCR <- get_cansim("32-10-0045") 
 
-# Specify list of vectors to filter for
-vectors <- c(
-  "v170298",  "v170299",  "v170309",  "v170310",  "v170311",  "v170312",
-  "v170313",  "v170314",  "v170315",  "v170316",
-  "v170301",  "v170302",  "v170308")
-
 # Clean the LivestockFCR dataframe
 LivestockFCR <- LivestockFCR %>%
-  mutate(Date = year(Date),  # set data types
-         `Type of cash receipts` = as.character(`Type of cash receipts`),
-         GEO = as.character(GEO))%>% 
-  filter(Date > date_cutoff,       # filter for date and vector list
-         VECTOR %in% vectors) %>%
-  rename(Commodity = `Type of cash receipts`) %>%
-  select(Date, GEO, Commodity,  val_norm) %>% # keep only these variables
-  mutate(Commodity = str_replace_all(Commodity, "Total livestock and livestock product receipts", "Total livestock & livestock product"))
+  
+  # Convert Date to year, GEO and Estimates to character
+  mutate(
+    Date = year(Date),
+    `Type of cash receipts` = as.character(`Type of cash receipts`),
+    GEO = as.character(GEO)
+  ) %>%
+  
+  # Keep only British Columbia
+  filter(
+    GEO == "British Columbia"
+  ) %>%
+  
+  # Keep only the latest year available
+  filter(
+    Date >= max(Date, na.rm = TRUE) - 10
+  ) %>%
+  
+  # Rename Type of cash receipts to Commodity
+  rename(
+    Commodity = `Type of cash receipts`,
+    Value = val_norm
+  ) %>%
+  
+  # Keep selected livestock
+  filter(
+    Commodity %in% c(
+      "Cattle",
+      "Calves",
+      "Hogs",
+      "Sheep",
+      "Lambs",
+      "Unprocessed milk from bovine",
+      "Chickens for meat",
+      "Turkeys for meat",
+      "Eggs in shell",
+      "Natural honey (except pollen)",
+      "Hatcheries - chicks and poults",
+      "Total livestock and livestock product receipts"
+    )
+  ) %>%
+  
+  # Replace "and" with "&"
+  mutate(Commodity = str_replace_all(Commodity, "Total livestock and livestock product receipts", "Total livestock & livestock product")) %>%
+  
+  # Keep only required variables
+  select(Date, GEO, Commodity, Value)
 
 # Pivot wide
 AllLivestockFCR <- LivestockFCR %>%
   pivot_wider(
     id_cols = c(Date, GEO),
     names_from = Commodity,
-    values_from = val_norm,
+    values_from = Value,
     values_fill = 0
   )
 
@@ -130,10 +163,11 @@ AllLivestockFCR <- AllLivestockFCR %>%
            `Turkeys for meat` -
            `Eggs in shell` -
            `Natural honey (except pollen)` -
-           `Raw furs from farm mink and fox` -
            `Hatcheries - chicks and poults`
   ) %>%
-  select(-`Total livestock & livestock product`) # drop column
+  
+  # drop column
+  select(-`Total livestock & livestock product`) 
 
 # Pivot long and replace 0 with null
 AllLivestockFCR <- AllLivestockFCR %>%
@@ -152,9 +186,11 @@ rm(LivestockFCR)
 toc()
 ```
 
-## C. Field Vegetable Breakdown
+## C. Field Vegetable FCR
 
-1.  Load the mushroom estimates ([Table: 32-10-0356-01](https://www150.statcan.gc.ca/t1/tbl1/en/cv.action?pid=3210035601) in DF called **MushroomFCR**)
+The field vegetable FCR entails more stitching of various tables:
+
+1.  Load the mushroom estimates ([Table: 32-10-0356-01](https://www150.statcan.gc.ca/t1/tbl1/en/cv.action?pid=3210035601) in DF called **MushroomFCR**) noting that the "Fresh vegetables - field" total from [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501) includes mushroom receipts.
 
 2.  After loading detailed field vegetable FCR breakdown, load the total field veg from the main FCR table and and calculate "Other field vegetables". The calculation is done by appending **MushroomFCR** and detailed field veg estimates ([Table 32-10-0456-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210045601) in DF called **FieldVegFCR**) with total field veg estimate ([Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501) in DF called **FCR_TotalFieldVeg**) to create a new DF called **AllFieldVeg**.
 
@@ -168,59 +204,146 @@ toc()
 tic()
 
 # Load the Mushroom table
-MushroomFCR <- get_cansim_vector("v74647", start_time = "2015-01-01")
+MushroomFCR <- get_cansim("32-10-0356")
 
 # Clean the MushroomFCR dataframe
 MushroomFCR <- MushroomFCR %>%
-  mutate(Date = year(Date)) %>%
-  select(Date, GEO, val_norm) # keep only these variables
+  
+  # Convert Date to year, GEO and Estimates to character
+  mutate(
+    Date = year(Date),
+    Estimates = as.character(Estimates),
+    GEO = as.character(GEO)
+  ) %>%
+  
+  # Keep total area harvested
+  filter(
+    Estimates == "Value (fresh and processed), total"
+  ) %>%
+  
+  # Keep only British Columbia
+  filter(
+    GEO == "British Columbia"
+  ) %>%
+  
+  # Keep only the latest year available
+  filter(
+    Date >= max(Date, na.rm = TRUE) - 10
+  ) %>%
+  
+  # Rename val_norm to Value
+  rename(
+    Value = val_norm
+  ) %>%
+  
+  # Keep only required variables
+  select(Date, GEO, Value)
+
+# Add commodity variable 
+MushroomFCR$Commodity <- "Fresh & processed mushrooms"
 
 # Linear interpolation of suppressed mushroom data
 MushroomFCR <- MushroomFCR %>%
   arrange(Date, .by_group = TRUE) %>%
-  mutate(val_norm = zoo::na.approx(val_norm, x = Date, na.rm = FALSE
-                                     , maxgap = 2))
-# Add commodity variable in MushroomFCR
-MushroomFCR$Commodity <- "Fresh & processed mushrooms"
+  mutate(Value = zoo::na.approx(Value, x = Date, na.rm = FALSE
+                                   , maxgap = 2))
 
 # Load the Field Vegetable table
 FieldVegFCR <- get_cansim("32-10-0365") 
 
-# Specify list of vectors to filter for
-vectors <- c(
-  "v72867",  "v72933",  "v73109",  "v43974261",  "v43974262",  "v73183",
-  "v73249",  "v73323",  "v73393",  "v73463",  "v73642",  "v52014142",  "v43974263",
-  "v73712",  "v73778",  "v52014262",  "v1043023138",  "v73848",  "v73914",
-  "v43974264",  "v43974265",  "v73980",  "v43974266",  "v1043023182",
-  "v74050",  "v20682407",  "v20682408",  "v52014316",  "v74230",
-  "v52014226",  "v52014184",  "v1043023171"
-)
-
 # Clean the FieldVegFCR dataframe
 FieldVegFCR <- FieldVegFCR %>%
-  mutate(Date = year(Date),  # set data types
-         Commodity = as.character(Commodity),
-         GEO = as.character(GEO))%>% 
-  filter(Date > date_cutoff,       # filter for date and vector list
-         VECTOR %in% vectors) %>%
-  select(Date, GEO, Commodity,  val_norm) # keep only these variables
+  
+  # Convert Date to year, Estimates and Commodity to character
+  mutate(
+    Date = year(Date),
+    Commodity = as.character(Commodity),
+    Estimates = as.character(Estimates)
+  ) %>%
+  
+  # Keep only the latest year available
+  filter(
+    Date >= max(Date, na.rm = TRUE) - 10
+  ) %>%
+  
+  # Keep only British Columbia
+  filter(
+    GEO == "British Columbia"
+  ) %>%
+  
+  # Filter only for area planted in hectares
+  filter(
+    Estimates == "Farm gate value (dollars)"
+  ) %>%
+  
+  # Exclude these commodities because they are further breakdowns that can be suppressed
+  filter(
+    !Commodity %in% c(
+      "Total fresh vegetables",
+      "Fresh Chinese cabbage",
+      "Fresh regular cabbage",
+      "Fresh kale",
+      "Fresh Asian radishes",
+      "Fresh radishes (except Asian radishes)"
+    )
+  ) %>%
+  
+  # Rename commodity categories
+  mutate(
+    Commodity = case_when(
+      Commodity == "Fresh cucumbers" ~ "Fresh cucumbers and fresh gherkins (all varieties)",
+      Commodity == "Other fresh vegetables" ~ "Other field vegetables",
+      Commodity == "Fresh radishes " ~ "Fresh radishes",
+      TRUE ~ Commodity
+    )
+  ) %>%
+  
+  # Rename val_norm to Value
+  rename(
+    Value = val_norm
+  ) %>%
+  
+  # Keep only required variables
+  select(Date, GEO, Commodity, Value)
 
-# Pull FieldVeg total from the main FCR talbe
-FCR_TotalFieldVeg <- get_cansim_vector(
-  "v21567230",
-  start_time = "2015-01-01"
-)
+# Pull FieldVeg total from the main FCR table
+FCR_TotalFieldVeg <- get_cansim("32-10-0045") 
 
 # Clean the FCR_TotalFieldVeg dataframe
 FCR_TotalFieldVeg <- FCR_TotalFieldVeg %>%
-  mutate(Date = year(Date),  # set data types
-         `Type of cash receipts` = as.character(`Type of cash receipts`),
-         GEO = as.character(GEO)) %>% 
-  rename(Commodity = `Type of cash receipts`) %>%
-  select(Date, GEO, Commodity, val_norm) # keep only these variables
+  
+  # Convert Date to year, GEO and Estimates to character
+  mutate(
+    Date = year(Date),
+    `Type of cash receipts` = as.character(`Type of cash receipts`),
+    GEO = as.character(GEO)
+  ) %>%
+  
+  # Keep only British Columbia
+  filter(
+    GEO == "British Columbia"
+  ) %>%
+  
+  # Keep only the latest year available
+  filter(
+    Date >= max(Date, na.rm = TRUE) - 10
+  ) %>%
+  
+  # Rename Type of cash receipts to Commodity
+  rename(
+    Commodity = `Type of cash receipts`,
+    Value = val_norm
+  ) %>%
+  
+  # Keep only field vegetable which includes mushrooms
+  filter(
+    Commodity == "Fresh vegetables - field"
+    ) %>%
+  
+  # Keep only required variables
+  select(Date, GEO, Commodity, Value)
 
-
-# Append both Field Veg tables + mushrooms
+# Append both Field Veg tables + mushrooms to total
 AllFieldVegFCR <- bind_rows(
   FCR_TotalFieldVeg,
   FieldVegFCR,
@@ -231,7 +354,7 @@ AllFieldVegFCR <- AllFieldVegFCR %>%
   pivot_wider(
     id_cols = c(Date, GEO),
     names_from = Commodity,
-    values_from = val_norm,
+    values_from = Value,
     values_fill = 0
   )
 
@@ -266,7 +389,7 @@ AllFieldVegFCR <- AllFieldVegFCR %>%
            `Fresh eggplants (except Chinese eggplants)` -           
            `Fresh tomatoes` -
            `Fresh peppers` -
-           `Fresh radishes ` -
+           `Fresh radishes` -
            `Fresh rhubarb` -
            `Fresh rutabagas and turnips` -
            `Fresh watermelons` -
@@ -292,7 +415,9 @@ rm(FCR_TotalFieldVeg, FieldVegFCR, MushroomFCR)
 (toc)
 ```
 
-## D. Fruits Breakdown
+## D. Fruits FCR
+
+The fruits chunk of code slightly varies because a more updated breakdown of certain fruits is available from the main FCR table, [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501). The steps are:
 
 1.  After loading detailed fruits FCR breakdown into DF called **FruitsFCR** from [Table 32-10-0364-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210036401), load the total fresh fruits, apples, blueberries, strawberries, grapes and cranberries from the main FCR table ([Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501)) into **FCR_TotalFruits** DF by appending both DFs to each other in a new DF called **AllFruitsFCR**.That DF is then pivoted wider to calculate "Other fresh fruits" by subtracting all broken down fruit FCR estimates from the total fruit FCR.
 
@@ -311,43 +436,100 @@ tic()
 # Load the detailed Fruit table
 FruitsFCR <- get_cansim("32-10-0364") 
 
-# Specify list of vectors to filter for
-vectors <- c(
-  "v43974022",
-  "v43974020",
-  "v52014320",
-  "v74430",
-  "v74459",
-  "v74500",
-  "v74547",
-  "v54321978",
-  "v1039061057"
-)
-
 # Clean the FruitsFCR dataframe
 FruitsFCR <- FruitsFCR %>%
-  mutate(Date = year(Date),  # set data types
-         Commodity = as.character(Commodity),
-         GEO = as.character(GEO))%>% 
-  filter(Date > date_cutoff,       # filter for date and vector list
-         VECTOR %in% vectors) %>%
-  select(Date, GEO, Commodity,  val_norm) # keep only these variables
+  
+  # Convert Date to year, Estimates, farm area and Commodity to character
+  mutate(
+    Date = year(Date),
+    Commodity = as.character(Commodity),
+    Estimates = as.character(Estimates)
+    ) %>%
+  
+  # Keep only the latest year available
+  filter(
+    Date >= max(Date, na.rm = TRUE) - 10
+  ) %>%
+  
+  # Keep only British Columbia
+  filter(
+    GEO == "British Columbia"
+  ) %>%
+  
+  # Filter only for area planted in hectares
+  filter(
+    Estimates == "Farm gate value"
+  ) %>%
+  
+  # Exclude these commodities
+  filter(
+    !Commodity %in% c(
+      "Total fresh fruit",
+      "Fresh apples",
+      "Fresh blueberries",
+      "Fresh cranberries",
+      "Fresh grapes",
+      "Fresh strawberries",
+      "Fresh highbush blueberries",
+      "Fresh lowbush blueberries",
+      "Fresh Labrusca grapes",
+      "Fresh vinifera, fresh French hybrid grapes",
+      "Other fresh fruit, n.e.c."
+    )
+  ) %>%
+  
+  # Rename val_norm to Value
+  rename(
+    Value = val_norm
+  ) %>%
+  
+  # Keep only required variables
+  select(Date, GEO, Commodity, Value)
+
 
 # Pull Fruits total from the main FCR table
 FCR_TotalFruits <- get_cansim("32-10-0045")
 
-# Specify list of vectors to filter for
-vectors <- c("v1025192429","v170279","v44179556","v79918468","v170282","v44179563")
-
 # Clean the FCR_TotalFruits dataframe
 FCR_TotalFruits <- FCR_TotalFruits %>%
-  mutate(Date = year(Date),  # set data types
-         `Type of cash receipts` = as.character(`Type of cash receipts`),
-         GEO = as.character(GEO)) %>% 
-  rename(Commodity = `Type of cash receipts`) %>%
-  filter(Date > date_cutoff,       # filter for date and vector list
-         VECTOR %in% vectors) %>%
-  select(Date, GEO, Commodity, val_norm) # keep only these variables
+  
+  # Convert Date to year, GEO and Estimates to character
+  mutate(
+    Date = year(Date),
+    `Type of cash receipts` = as.character(`Type of cash receipts`),
+    GEO = as.character(GEO)
+  ) %>%
+  
+  # Keep only British Columbia
+  filter(
+    GEO == "British Columbia"
+  ) %>%
+  
+  # Keep only the latest year available
+  filter(
+    Date >= max(Date, na.rm = TRUE) - 10
+  ) %>%
+  
+  # Rename Type of cash receipts to Commodity
+  rename(
+    Commodity = `Type of cash receipts`,
+    Value = val_norm
+  ) %>%
+  
+  # Keep selected fruits
+  filter(
+    Commodity %in% c(
+      "Total fresh fruit",
+      "Fresh apples",
+      "Fresh blueberries",
+      "Fresh cranberries",
+      "Fresh strawberries",
+      "Fresh grapes")
+  ) %>%
+  
+  # Keep only required variables
+  select(Date, GEO, Commodity, Value)
+
 
 # Append both Fruit tables
 AllFruitsFCR <- bind_rows(
@@ -359,7 +541,7 @@ AllFruitsFCR <- AllFruitsFCR %>%
   pivot_wider(
     id_cols = c(Date, GEO),
     names_from = Commodity,
-    values_from = val_norm,
+    values_from = Value,
     values_fill = 0
   )
 
@@ -402,92 +584,115 @@ rm(FCR_TotalFruits, FruitsFCR)
 toc()
 ```
 
-## E. Greenhouse Fruits & Vegetables
+## E. Greenhouse Fruits & Vegetables FCR
 
-1.  The only greenhouse fruit with detailed FCR estimate is strawberries, or vector v1271897860 so the first part of the chunk of code below builds the AllGHFruitFCR table using that vector.
-
-2.  The next part is to load the detailed GH vegetable breakdown from [Table 32-10-0456-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210045601) and we replace "fresh" with GH to distinguish from field-grown vegetables. The total GH vegetables is pulled from main FCR table, [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501), then appended with the detailed GH vegetables. Other GH vegetables is then calculated as the difference between total GH vegetables from the main FCR table, [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501) and the sum of GH vegetable breakdown from [Table 32-10-0456-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210045601).
+The next part is to load the detailed GH fruit vegetable breakdown from [Table 32-10-0456-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210045601) and we replace "fresh" with GH to distinguish from field-grown fruits and vegetables. The total GH fruits vegetables is pulled from main FCR table, [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501), then appended with the detailed GH fruits & vegetables. Other GH fruits & vegetables is then calculated as the difference between total GH fruits & vegetables from the main FCR table, [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501), and the sum of GH fruits & vegetable breakdown from [Table 32-10-0456-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210045601).
 
 ```{r GHFruitVeg}
 
 tic()
 
-# Pull data from StatCan with date filter for All GH fruits
-AllGHFruitFCR <- get_cansim_vector(
-  "v1271897860",
-  start_time = "2014-05-01"
-)
+# Load the GH Fruit & Veg table
+GHFruitVegFCR <- get_cansim("32-10-0456") 
 
-AllGHFruitFCR <- AllGHFruitFCR %>%
-  mutate(Date = year(Date)) %>%  # set data types
-  rename(Value = val_norm) %>%
-  select(Date, GEO, Commodity, Value)  # keep only these variables
+# Clean the GHFruitVegArea dataframe
+GHFruitVegFCR <- GHFruitVegFCR %>%
+  
+  # Convert Date to year, Commodity and production value to character
+  mutate(
+    Date = year(Date),
+    Commodity = as.character(Commodity),
+    `Production and value` = as.character(`Production and value`)
+  ) %>%
+  
+  # Keep only the latest year available
+  filter(
+    Date >= max(Date, na.rm = TRUE) - 10
+  ) %>%
+  
+  # Keep only British Columbia
+  filter(
+    GEO == "British Columbia"
+  ) %>%
+  
+  # Filter only for area
+  filter(
+    `Production and value` == "Farm gate value"
+  ) %>%
+
+  # Exclude these commodities
+  filter(
+    !Commodity %in% c(
+      "Other fresh fruits or vegetables")
+  ) %>%
+
+
+  # Rename val_norm to Value
+  rename(
+    Value = val_norm
+  ) %>%
+  
+  # Keep only required variables
+  select(Date, GEO, Commodity, Value)
 
 # Replace fresh with GH
-AllGHFruitFCR$Commodity <- gsub("Fresh", "GH", AllGHFruitFCR$Commodity)
+GHFruitVegFCR$Commodity <- gsub("Fresh", "GH", GHFruitVegFCR$Commodity)
 
-# Load the GH Veg table
-GHVegFCR <- get_cansim("32-10-0456") 
+# Pull GH Fruit & Veg total from the main FCR table
+FCR_TotalGHVeg <- get_cansim("32-10-0045") 
 
-# Specify list of vectors to filter for
-vectors <- c(
-  "v47986",
-  "v48022",
-  "v52222649",
-  "v52222654",
-  "v112087818",
-  "v112087825",
-  "v112087832",
-  "v112087846",
-  "v122741498",
-  "v122741505"
-)
-
-# Clean the GHFruitsVegFCR dataframe
-GHVegFCR <- GHVegFCR %>%
-  mutate(Date = year(Date),  # set data types
-         `Production and value` = as.character(`Production and value`),
-         GEO = as.character(GEO)) %>% 
-  filter(Date > date_cutoff,       # filter for date and vector list
-         VECTOR %in% vectors,
-         `Production and value` == "Farm gate value") %>%
-  select(Date, GEO, Commodity, val_norm) # keep only these variables
-
-# Replace fresh with GH
-GHVegFCR$Commodity <- gsub("Fresh", "GH", GHVegFCR$Commodity)
-
-# Pull data from StatCan with date filter
-FCR_TotalGHVeg <- get_cansim_vector(
-  "v21567208",
-  start_time = "2014-05-01"
-)
-
-# Clean the FCR_TotalGHFV dataframe
+# Clean the FCR_TotalGHVeg dataframe
 FCR_TotalGHVeg <- FCR_TotalGHVeg %>%
-  mutate(Date = year(Date),  # set data types
-         `Type of cash receipts` = as.character(`Type of cash receipts`),
-         GEO = as.character(GEO)) %>% 
-  rename(Commodity = `Type of cash receipts`) %>%
-  select(Date, GEO, Commodity, val_norm) # keep only these variables
+  
+  # Convert Date to year, GEO and and Type of cash receipt to character
+  mutate(
+    Date = year(Date),
+    `Type of cash receipts` = as.character(`Type of cash receipts`),
+    GEO = as.character(GEO)
+  ) %>%
+  
+  # Keep only British Columbia
+  filter(
+    GEO == "British Columbia"
+  ) %>%
+  
+  # Keep only the latest year available
+  filter(
+    Date >= max(Date, na.rm = TRUE) - 10
+  ) %>%
+  
+  # Rename Type of cash receipts to Commodity
+  rename(
+    Commodity = `Type of cash receipts`,
+    Value = val_norm
+  ) %>%
+  
+  # Keep only field vegetable which includes mushrooms
+  filter(
+    Commodity == "Fresh vegetables - greenhouse"
+  ) %>%
+  
+  # Keep only required variables
+  select(Date, GEO, Commodity, Value)
 
 # Append both GH FV tables
-AllGHVegFCR <- bind_rows(
+AllGHFruitVegFCR <- bind_rows(
   FCR_TotalGHVeg,
-  GHVegFCR)
+  GHFruitVegFCR)
 
 # Pivot wide
-AllGHVegFCR <- AllGHVegFCR %>%
+AllGHFruitVegFCR <- AllGHFruitVegFCR %>%
   pivot_wider(
     id_cols = c(Date, GEO),
     names_from = Commodity,
-    values_from = val_norm,
+    values_from = Value,
     values_fill = 0
   )
 
-# Calculate Other fresh fruits
-AllGHVegFCR <- AllGHVegFCR %>%
+# Calculate Other GH fruits and veg
+AllGHFruitVegFCR <- AllGHFruitVegFCR %>%
   mutate(across(everything(), ~ tidyr::replace_na(.x, 0)),
-         `Other GH Vegetables` =
+         `Other GH fruits or vegetables` =
            `Fresh vegetables - greenhouse` -
            `GH tomatoes` -
            `GH cucumbers` -
@@ -503,7 +708,7 @@ AllGHVegFCR <- AllGHVegFCR %>%
   select(-`Fresh vegetables - greenhouse`) # drop column
 
 # Pivot long and replace 0 with null
-AllGHVegFCR <- AllGHVegFCR %>%
+AllGHFruitVegFCR <- AllGHFruitVegFCR %>%
   pivot_longer(
     cols = !c(Date, GEO),
     names_to = "Commodity",
@@ -514,82 +719,307 @@ AllGHVegFCR <- AllGHVegFCR %>%
 
 
 # Drop DFs no longer used
-rm(FCR_TotalGHVeg, GHVegFCR)
+rm(FCR_TotalGHVeg, GHFruitVegFCR)
 
 toc()
 ```
 
-## F. Floriculture, Nursery & Sod Breakdown
+## F. Floriculture FCR
 
-1.  Starting by loading sod (vector v44179596) FCR from the main FCR table, [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501) into the DF called **FCR_Sod**. This is then cleaned and renamed to **AllSodFCR**. Missing or suppressed values are then linearly interpolated (see note below).
+Only data on field floriculture is available so we deduce greenhouse floriculture with the following steps:
 
-2.  Then, load the total floriculture, nursery and sod, Floriculture and nursery products, and sod from the main FCR table, [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501), into the **FCR_FNS** DF which is pivoted wider to calculate nursery total as the difference between the total less floriculture, and sod and saved as the DF called **AllNurseryFCR**.
+1.  Load and clean floriculture field FCR from annual greenhouse survey [Table 32-10-0452-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210045201)) into the DF called **FloricultureFieldFCR**.
 
-3.  Using the DF **FCR_FNS**, create a new DF by keeping only Floriculture products (except flower seeds), . Load FloricultureField (vector v112281450 from [Table 32-10-0452-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210045201)) into a DF called **FloricultureField** and append/bind rows in **FCR_FNS** and **FloricultureField** into a DF called **AllFloricultureFCR**.
+2.  Backcast to 2015 using DF called **Backcast2015** and append to **FloricultureFieldFCR**
 
-4.  Linearly predict 2015 field floriculture because the data set only goes back to 2016. Then, calculate [GH floriculture]`=[`Floriculture products (except flower seeds)]`-[`Field-grown cut flowers].
+3.  Then, load Floriculture products (except flower seeds) from the main FCR table, [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501), into DF called FCR_Floriculture and append/bind rows with **FloricultureFieldFCR** into a DF called **AllFloricultureFCR**.
 
-5.  The DF **FCR_GH_Floriculture_Nursery** is loaded from [Table 32-10-0246-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210024601) and grouped by summing total value to a DF called **FCR_GH_Floriculture_Nursery** then assigned commodity called "GH Floriculture & Nursery".
+4.  Calculate GH floriculture as the difference between total floriculture products (except flower seeds) and field grown flowers.
 
-6.  Create a new DF called **GHFloricultureFCR** by filtering **AllFloricultureFCR** for only GH Floriculture.
+```{r Floriculture}
 
-7.  Load FCR for GH floriculture and nursery into DF called **FCR_GH_Floriculture_Nursery** from
+# Load the Floriculture Field from the Annual Greenhouse Survey
+FloricultureFieldFCR <- get_cansim("32-10-0452")
 
-8.  Bind rows/append DF **FCR_GH_Floriculture_Nursery** and **GHFloricultureFCR** into a new DF called **FCR_GHNursery**, pivot wide then calculate GH floriculture from Floriculture products (except flowers and seeds) less Field-grown cut flowers. In other words:
+# Clean the FloricultureFieldFCR dataframe
+FloricultureFieldFCR <- FloricultureFieldFCR %>%
+  
+  # Convert Date to year, Area and GEO to character
+  mutate(
+    Date = year(Date),
+    GEO = as.character(GEO),
+    `Area, production, and sales` = as.character(`Area, production, and sales`)
+  ) %>%
+  
+  # Keep only British Columbia
+  filter(
+    GEO == "British Columbia"
+  ) %>%
+  
+  # Keep only the latest 10 years
+  filter(
+    Date >= max(Date, na.rm = TRUE) - 10
+  ) %>%
+  
+  # Keep only total gross sales
+  filter(
+    `Area, production, and sales` == "Total gross sales"
+  ) %>%
+  
+  # Rename val_norm to Value
+  rename(
+    Value = val_norm
+  ) %>%
+  
+  # Keep only required variables
+  select(Date, GEO, Value)
 
-    GH floriculture = Total floriculture - Field-grown floriculture
+# Add commodity variable
+FloricultureFieldFCR <- FloricultureFieldFCR %>%
+  mutate(
+    Commodity = "Field-grown flowers"
+  )
 
-9.  Bind rows/append DF **GHFloricultureFCR** with DF **FCR_GH_Floriculture_Nursery** and pivot wide to a new DF called **FCR_GHNursery** to calculate GH Nursery from GH floriculure & nursery less GH Floriculture or in other words:
+# Fit linear trend using 2016-2025
+fit <- lm(
+  Value ~ Date,
+  data = FloricultureFieldFCR,
+  subset = Date >= 2016 & Date <= 2025
+)
+
+# Backcast the 2015 value
+Backcast2015 <- data.frame(
+  Date = 2015,
+  GEO = "British Columbia",
+  Value = as.numeric(
+    predict(fit, newdata = data.frame(Date = 2015))
+  ),
+  Commodity = "Field-grown flowers"
+)
+
+# Add the backcasted 2015 observation
+FloricultureFieldFCR <- FloricultureFieldFCR %>%
+  bind_rows(Backcast2015) %>%
+  arrange(Date)
+
+# Remove backcast and fit
+rm(Backcast2015, fit)
+
+# Load the Floriculture data from the main FCR table 
+FCR_Floriculture <- get_cansim("32-10-0045") 
+
+# Clean the FCR_Floriculture dataframe
+FCR_Floriculture <- FCR_Floriculture %>%
+  
+  # Convert Date to year, GEO and Estimates to character
+  mutate(
+    Date = year(Date),
+    `Type of cash receipts` = as.character(`Type of cash receipts`),
+    GEO = as.character(GEO)
+  ) %>%
+  
+  # Keep only British Columbia
+  filter(
+    GEO == "British Columbia"
+  ) %>%
+  
+  # Keep only the latest year available
+  filter(
+    Date >= max(Date, na.rm = TRUE) - 10
+  ) %>%
+  
+  # Rename Type of cash receipts to Commodity
+  rename(
+    Commodity = `Type of cash receipts`,
+    Value = val_norm
+  ) %>%
+  
+  # Keep only total floriculture
+  filter(
+    Commodity == "Floriculture products (except flower seeds)"
+  ) %>%
+  
+  # Keep only required variables
+  select(Date, GEO, Commodity, Value)
+
+# Append  Floriculture tables
+AllFloricultureFCR <- bind_rows(
+  FCR_Floriculture,
+  FloricultureFieldFCR)
+
+# Pivot wide
+AllFloricultureFCR <- AllFloricultureFCR %>%
+  pivot_wider(
+    id_cols = c(Date, GEO),
+    names_from = Commodity,
+    values_from = Value,
+    values_fill = 0
+  )
+
+# Calculate GH floriculture products
+AllFloricultureFCR <- AllFloricultureFCR %>%
+  mutate(across(everything(), ~ tidyr::replace_na(.x, 0)),
+         `GH floriculture` =
+           `Floriculture products (except flower seeds)` -
+           `Field-grown flowers`
+  ) %>%
+  select(-`Floriculture products (except flower seeds)`) # drop column
+
+# Pivot long and replace 0 with null
+AllFloricultureFCR <- AllFloricultureFCR %>%
+  pivot_longer(
+    cols = !c(Date, GEO),
+    names_to = "Commodity",
+    values_to = "Value"
+  ) %>%
+  mutate(Value = na_if(Value, 0)) %>%
+  filter(!is.na(Value))
+
+# Drop DFs no longer used
+rm(FCR_Floriculture, FloricultureFieldFCR)
+```
+
+## G. Sod FCR
+
+Sod estimates from the main FCR table, Table 32-10-0034-01 is suppressed for some of the years. A more complete data set can be found from the Annual Greenhouse survey through the following steps:
+
+1.  Starting by loading sodFCR from the Annual Greenhouse Survey, Table: 32-10-0034-01 into the DF called **AllSodFCR**.
+
+2.  Filter only for "Total sod sales" and "Gross revenue from sod grown"
+
+3.  Both numbers are historically the same with one or the other being suppressed so we filter out any missing values and group by Date to fill in missing values
+
+4.  Drop the "Type" column and replace with "Commodity" which is sod
+
+```{r Sod}
+
+# Load Sod FCR from Annual Greenhouse Survey
+AllSodFCR <- get_cansim("32-10-0034-01")
+
+# Clean the GHFruitVegArea dataframe
+AllSodFCR <- AllSodFCR %>%
+  
+  # Convert Date to year and production value to character
+  mutate(
+    Date = year(Date),
+    `Area sales and resales` = as.character(`Area sales and resales`)
+  ) %>%
+  
+  # Keep only the latest year available
+  filter(
+    Date >= max(Date, na.rm = TRUE) - 10
+  ) %>%
+  
+  # Keep only British Columbia
+  filter(
+    GEO == "British Columbia"
+  ) %>%
+  
+  # Keep selected types of data
+  filter(
+    `Area sales and resales` %in% c(
+      "Total sod sales",
+      "Gross revenue from sod grown")
+  ) %>%
+  
+  # Rename val_norm to Value
+  rename(
+    Value = val_norm,
+    Type = `Area sales and resales`
+  ) %>%
+  
+  # Keep only Total sod sales and Gross revenue from sod grown
+  filter(
+    Type %in% c(
+      "Total sod sales",
+      "Gross revenue from sod grown"
+    )
+  ) %>%
+  
+  # Group observations by year and geography
+  group_by(Date, GEO) %>%
+  
+  # Remove rows where the value is missing
+  filter(!is.na(Value)) %>%
+  
+  # Prioritize Total sod sales when both estimates have values
+  arrange(
+    Date,
+    desc(Type == "Total sod sales")
+  ) %>%
+  
+  # Keep only one observation per year
+  slice(1) %>%
+  
+  # Remove grouping
+  ungroup() %>%
+  
+  # Keep only required variables
+  select(Date, GEO, Value)
+
+# Add commodity variable 
+AllSodFCR$Commodity <- "Sod"
+```
+
+## H. Nursery FCR
+
+Total nursery FCR is suppressed for some years in the main FCR table, [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501) and is calculated from total floriculture, nursery and sod using known sod and floriculture sub-totals. In addition, GH nursery can be calculated using the Annual Greenhouse Survey's estimates of total GH value across GH floriculture and GH nursery. By deduction, field nursery = total nursery less GH nursery:
+
+1.  Load total floriculture, nursery and sod from [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501) into DF called **FCR_FNS** along with floriculture total. Append sod total and calculate nursery as the difference between total floriculture, nursery and sod and the sum of sod and floriculture in DF called **AllNurseryFCR**.
+
+2.  The DF **FCR_GH_Floriculture_Nursery** is loaded from [Table 32-10-0246-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210024601) and grouped by summing total value to a DF called **FCR_GH_Floriculture_Nursery** then assigned commodity called "GH Floriculture & Nursery".
+
+3.  Create a new DF called **GHFloricultureFCR** by filtering **AllFloricultureFCR** for only GH Floriculture.
+
+4.  Bind rows/append DF **GHFloricultureFCR** with DF **FCR_GH_Floriculture_Nursery** and pivot wide to a new DF called **FCR_GHNursery** to calculate GH Nursery from GH floriculure & nursery less GH Floriculture or in other words:
 
     GH Nursery = GH Floriculture & Nursery - GH Floriculture
 
-10. Append All Nursery (DF called **AllNurseryFCR**) with GH nursery (DF called **FCR_GHNursery**), pivot wide and calculate field nursery (column called **Field Nursery**) as difference between all nusery less GH nursery. Pivot the entire DF long into **AllNurseryFCR**
+5.  Append the DF called **AllNurseryFCR** with **FCR_GHNursery**), pivot wide and calculate field nursery (column called **Field Nursery**) as difference between all nursery less GH nursery. Drop total nursery column and pivot the entire DF long into **AllNurseryFCR**
 
-A note on time series interpolation: This method estimates missing values based on trends in the available data where up to 2 years of data in the same category are suppressed but values exist before and after. Linear interpolation is used to address missing values for Nursery and Sod. The following code creates the column `value_interp`, which duplicates `val_norm` and estimates missing values for up to 2 years of consecutive missing data in each category. Currently, this step is only done for floriculture, nursery and sod because 2018 values for nursery and sod are suppressed.
-
-```{r FloriNurseSod}
+```{r Nursery}
 
 tic()
 
-# Load Sod FCR from maintable
-FCR_Sod <- get_cansim_vector(
-  "v44179596",
-  start_time = "2015-01-01"
-)
-
-# Clean the FCR_Sod dataframe
-FCR_Sod <- FCR_Sod %>%
-  mutate(Date = year(Date),  # set data types
-         `Type of cash receipts` = as.character(`Type of cash receipts`),
-         GEO = as.character(GEO)) %>% 
-  rename(Commodity = `Type of cash receipts`,
-         Value = val_norm) %>%
-  select(Date, GEO, Commodity, Value) # keep only these variables
-
-# Linear interpolation for Sod
-AllSodFCR <- FCR_Sod %>%
-  arrange(Date, .by_group = TRUE) %>%
-  mutate(Value = zoo::na.approx(Value, x = Date, na.rm = FALSE
-                                   , maxgap = 2)) # linear interpolation of any missing values (specifically 2018)
-# Load the main FCR table for floriculture, nursery and sod as well as floriculture total
-
+# Load the main FCR table for floriculture, nursery and sod 
 FCR_FNS <- get_cansim("32-10-0045") 
-
-# Specify list of vectors to filter for
-vectors <- c(
-  "v170284",  "v44179574"
-)
 
 # Clean the FCR_FNS dataframe
 FCR_FNS <- FCR_FNS %>%
-  mutate(Date = year(Date),  # set data types
-         `Type of cash receipts` = as.character(`Type of cash receipts`),
-         GEO = as.character(GEO)) %>%  
-  filter(Date > date_cutoff,       # filter for date and vector list
-         VECTOR %in% vectors) %>%  
-  rename(Commodity = `Type of cash receipts`,
-         Value = val_norm) %>%  # rename variable
-  select(Date, GEO, Commodity, Value) # keep only these variables
+  
+  # Convert Date to year, GEO and Estimates to character
+  mutate(
+    Date = year(Date),
+    `Type of cash receipts` = as.character(`Type of cash receipts`),
+    GEO = as.character(GEO)
+  ) %>%
+  
+  # Keep only British Columbia
+  filter(
+    GEO == "British Columbia"
+  ) %>%
+  
+  # Keep only the latest year available
+  filter(
+    Date >= max(Date, na.rm = TRUE) - 10
+  ) %>%
+  
+  # Rename Type of cash receipts to Commodity
+  rename(
+    Commodity = `Type of cash receipts`,
+    Value = val_norm
+  ) %>%
+  
+  # Keep selected commodities
+  filter(
+    Commodity %in% c(
+      "Floriculture and nursery products, and sod",
+      "Floriculture products (except flower seeds)")
+  ) %>%
+  
+  # Keep only required variables
+  select(Date, GEO, Commodity, Value)
+
 
 # Append Sod with FCR_FNS
 FCR_FNS <- bind_rows(
@@ -613,103 +1043,52 @@ AllNurseryFCR <- FCR_FNS %>%
            `Floriculture products (except flower seeds)` -
            `Sod`
   ) %>%
-  select(-c(`Floriculture and nursery products, and sod`,`Floriculture products (except flower seeds)`, `Sod`)) %>% # drop column
+  
+  # drop columns
+  select(-c(`Floriculture and nursery products, and sod`,`Floriculture products (except flower seeds)`, `Sod`)) %>%
+  
+  # Pivot longer
   pivot_longer(
     cols = !c(Date, GEO),
     names_to = "Commodity",
     values_to = "Value"
   )
-
-# Pivot long FCR_FNS
-FCR_Floriculture  <- FCR_FNS %>%
-  select(-c(`Floriculture and nursery products, and sod`, `Sod`)) %>% # drop column
-  pivot_longer(
-    cols = !c(Date, GEO),
-    names_to = "Commodity",
-    values_to = "Value"
-  )
-
-# Load the FloricultureField table
-FloricultureField <- get_cansim_vector("v112281450", start_time = "2015-01-01")
-
-# Clean the FloricultureField dataframe
-FloricultureField <- FloricultureField %>%
-  mutate(Date = year(Date)) %>%
-  rename(Value = val_norm) %>%  # rename variable
-  select(Date, GEO, Value) # keep only these variables
-
-# Create 2015 entry (data not available)
-FloricultureField <- FloricultureField %>%
-  add_row(
-    Date = 2015,
-    GEO = "British Columbia",
-    Value = NA
-  )
-
-# Add commodity variable in FloricultureField
-FloricultureField$Commodity <- "Field-grown cut flowers"
-
-
-# 2015 backcasting/extrapolation using a linear trend fitted to 2016-2025
-fit <- lm(Value ~ Date,
-          data = FloricultureField,
-          subset = Date >= 2016 & Date <= 2025)
-
-FloricultureField$Value[FloricultureField$Date == 2015] <-
-  predict(fit, newdata = data.frame(Date = 2015))
-
-# Append  Floriculture tables
-AllFloricultureFCR <- bind_rows(
-  FCR_Floriculture,
-  FloricultureField)
-
-# Pivot wide
-AllFloricultureFCR <- AllFloricultureFCR %>%
-  pivot_wider(
-    id_cols = c(Date, GEO),
-    names_from = Commodity,
-    values_from = Value,
-    values_fill = 0
-  )
-
-# Calculate GH floriculture products
-AllFloricultureFCR <- AllFloricultureFCR %>%
-  mutate(across(everything(), ~ tidyr::replace_na(.x, 0)),
-         `GH floriculture` =
-           `Floriculture products (except flower seeds)` -
-           `Field-grown cut flowers`
-  ) %>%
-  select(-`Floriculture products (except flower seeds)`) # drop column
-
-# Pivot long and replace 0 with null
-AllFloricultureFCR <- AllFloricultureFCR %>%
-  pivot_longer(
-    cols = !c(Date, GEO),
-    names_to = "Commodity",
-    values_to = "Value"
-  ) %>%
-  mutate(Value = na_if(Value, 0)) %>%
-  filter(!is.na(Value))
 
 # Load the GH Nursery table
 FCR_GH_Floriculture_Nursery <- get_cansim("32-10-0246")
 
-vectors <- c("v52221141",
-             "v52221119",
-             "v52221097",
-             "v52221163",
-             "v52221185")
-
 # Clean the FCR_GH_Floriculture_Nursery dataframe
 FCR_GH_Floriculture_Nursery <- FCR_GH_Floriculture_Nursery %>%
-  mutate(Date = year(Date),  # set data types
-         `Type of cash receipts` = as.character(`Flowers and plants`),
-         GEO = as.character(GEO)) %>%  
-  filter(Date > date_cutoff,       # filter for date and vector list
-         VECTOR %in% vectors) %>%  
-  rename(Commodity = `Flowers and plants`,
-         Value = val_norm) %>%  # rename variable
-  select(Date, GEO, Commodity, Value) # keep only these variables
+  
+  # Convert Date to year, GEO and Estimates to character
+  mutate(
+    Date = year(Date),
+    Output = as.character(Output),
+    GEO = as.character(GEO)
+  ) %>%
+  
+  # Keep only British Columbia
+  filter(
+    GEO == "British Columbia"
+  ) %>%
+  
+  # Keep only the latest year available
+  filter(
+    Date >= max(Date, na.rm = TRUE) - 10
+  ) %>%
+  
+  # Rename Value
+  rename(
+    Value = val_norm
+  ) %>%
+  
+  # Keep only Sales
+  filter(
+    Output == "Sales"
+  ) %>%
+  
+  # Keep only required variables
+  select(Date, GEO, Value)
 
 # Sum and group FCR_GH_Floriculture_Nursery
 FCR_GH_Floriculture_Nursery <- FCR_GH_Floriculture_Nursery %>%
@@ -737,11 +1116,19 @@ FCR_GHNursery <- FCR_GHNursery %>%
     values_from = Value,
     values_fill = 0
   ) %>%
-  mutate(across(everything(), ~ tidyr::replace_na(.x, 0)), # Calculate GH Nursery
+  
+  # Calculate GH Nursery
+  mutate(across(everything(), ~ tidyr::replace_na(.x, 0)), 
          `GH Nursery` =
            `GH Floriculture & Nursery` -
-           `GH floriculture`) %>%
-  select(-c(`GH Floriculture & Nursery`, `GH floriculture`)) %>% # drop column
+           `GH floriculture`
+         ) %>%
+  
+  # Drop column
+  select(-c(`GH Floriculture & Nursery`, `GH floriculture`)
+         ) %>% 
+  
+  # Pivot longer
   pivot_longer(
     cols = !c(Date, GEO),
     names_to = "Commodity",
@@ -762,11 +1149,16 @@ AllNurseryFCR <- AllNurseryFCR %>%
     values_from = Value,
     values_fill = 0
   ) %>%
-    mutate(across(everything(), ~ tidyr::replace_na(.x, 0)), # Calculate field Nursery
+  
+  # Calculate field Nursery
+    mutate(across(everything(), ~ tidyr::replace_na(.x, 0)), 
            `Field Nursery` =
              `Nursery products (except tree and shrub seeds)` -
              `GH Nursery`) %>%
-    select(-c(`Nursery products (except tree and shrub seeds)`)) %>% # drop column
+    select(-c(`Nursery products (except tree and shrub seeds)`)
+           ) %>%
+  
+  # drop column
     pivot_longer(
       cols = !c(Date, GEO),
       names_to = "Commodity",
@@ -774,53 +1166,87 @@ AllNurseryFCR <- AllNurseryFCR %>%
     )
 
 # Drop DFs no longer used
-rm(FCR_Floriculture, FCR_FNS, FCR_Sod, FloricultureField, GHFloricultureFCR, FCR_GH_Floriculture_Nursery, FCR_GHNursery, fit)
+rm(FCR_FNS, FCR_GH_Floriculture_Nursery, FCR_GHNursery, GHFloricultureFCR)
+
 toc()
 ```
 
-## G. Other Crops FCR Breakdown
+## I. Other Crops FCR
 
-This chunk of code pulls the remaining commodities from the main FCR table, [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501), into a DF called AllOtherCropsFCR. After cleaning, it is appended/row bind with all other crop DFs (**AllFiledVegFCR, AllFruitsFCR, AllGHFruitFCR, AllGHVegFCR, AllOtherCropsFCR**) into the DF called **AllCropsFCR**.
+A final residual that needs to be calculated is for all other crops through the following steps:
 
-Other crops is calculated as the difference between Total crop receipts and all other crop breakdowns and saved into **AllCropsFCR**\$Other crops.
+1.  Pull the remaining commodities from the main FCR table, [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501), into a DF called AllOtherCropsFCR.
 
-Note that deferred grain receipts are added rather than subtracted because its a negative number.
+2.  After cleaning, it is appended/row bind with all other crop DFs (**AllFiledVegFCR, AllFruitsFCR, AllGHFruitVegFCR, AllOtherCropsFCR**) into the DF called **AllCropsFCR**.
+
+3.  Other crops is calculated as the difference between Total crop receipts and all other crop breakdowns and saved into **AllCropsFCR**\$Other crops.
 
 ```{r Other Crops FCR}
 
 # Start timer
 tic()
 
-
 # Load the main FCR table for all other commodities without further breakdown
 AllOtherCropsFCR <- get_cansim("32-10-0045") 
 
-# Specify list of vectors to filter for
-vectors <- c(
-  "v170272",  "v170273",  "v170274",  "v170275",
-  "v170276",  "v170277",  "v170285",  "v170286",
-  "v170287",  "v170288",  "v170289",  "v170292", "v170297",
-  "v170291",  "v170293",  "v170295",  "v1025192441",  "v170271"
-)
-
-# Clean the OtherFCR dataframe
+# Clean the AllOtherCropsFCR dataframe
 AllOtherCropsFCR <- AllOtherCropsFCR %>%
-  mutate(Date = year(Date),  # set data types
-         `Type of cash receipts` = as.character(`Type of cash receipts`),
-         GEO = as.character(GEO)) %>%  
-  filter(Date > date_cutoff,       # filter for date and vector list
-         VECTOR %in% vectors) %>%  
-  rename(Commodity = `Type of cash receipts`,
-         Value = val_norm) %>%  # rename variable
-  select(Date, GEO, Commodity, Value) # keep only these variables
+  
+  # Convert Date to year, GEO and Type of cash receipts to character
+  mutate(
+    Date = year(Date),
+    `Type of cash receipts` = as.character(`Type of cash receipts`),
+    GEO = as.character(GEO)
+  ) %>%
+  
+  # Keep only British Columbia
+  filter(
+    GEO == "British Columbia"
+  ) %>%
+  
+  # Keep only the latest year available
+  filter(
+    Date >= max(Date, na.rm = TRUE) - 10
+  ) %>%
+  
+  # Rename Type of cash receipts to Commodity
+  rename(
+    Commodity = `Type of cash receipts`,
+    Value = val_norm
+  ) %>%
+  
+  # Keep selected commodities
+  filter(
+    Commodity %in% c(
+      "Total crop receipts",
+      "Cannabis seeds, vegetative plants and flowering tops (including leaves)",
+      "Fresh potatoes",
+      "Christmas trees",
+      "Wheat (except durum wheat)",
+      "Oats",
+      "Barley",
+      "Deferred grain receipts",
+      "Liquidation of deferred grain receipts",
+      "Rye",
+      "Flaxseed",
+      "Canola (including rapeseed)",
+      "Sunflower seeds",
+      "Dry peas",
+      "Forage seeds and grass seeds",
+      "Hay",
+      "Forest products",
+      "Ginseng root for medicinal use")
+  ) %>%
+  
+  # Keep only required variables
+  select(Date, GEO, Commodity, Value)
 
 # Append All tables
 AllCropsFCR <- bind_rows(
   AllOtherCropsFCR,
   AllFieldVegFCR,
   AllFruitsFCR,
-  AllGHVegFCR,
-  AllGHFruitFCR,
+  AllGHFruitVegFCR,
   AllFloricultureFCR,
   AllNurseryFCR,
   AllSodFCR)
@@ -833,9 +1259,6 @@ AllCropsFCR <- AllCropsFCR %>%
     values_from = Value,
     values_fill = 0
   )
-
-fwrite(AllCropsFCR, "C:/Users/lebautis/Government of BC/SICI Data Library Subsite - Unpublished Data/AllCropsFCR.csv")
-
 
 # Calculate All other crops FCR
 AllCropsFCR <- AllCropsFCR %>%
@@ -885,12 +1308,13 @@ AllCropsFCR <- AllCropsFCR %>%
            `Fresh eggplants (except Chinese eggplants)` -           
            `Fresh tomatoes` -
            `Fresh peppers` -
-           `Fresh radishes ` -
+           `Fresh radishes` -
            `Fresh rhubarb` -
            `Fresh rutabagas and turnips` -
            `Fresh watermelons` -
            `Other fresh melons` -
            `Fresh sweet potatoes` -
+           `Fresh & processed mushrooms` -
            `Other field vegetables` -  
            `Fresh apples` -
            `Fresh blueberries` -
@@ -917,9 +1341,9 @@ AllCropsFCR <- AllCropsFCR %>%
            `GH fine herbs` -
            `GH green and wax beans` -
            `GH microgreens and shoots` -
-           `Other GH Vegetables` -
+           `Other GH fruits or vegetables` -
            `GH floriculture` -
-           `Field-grown cut flowers` -
+           `Field-grown flowers` -
            `Field Nursery` - 
            `GH Nursery` -
            `Sod`
@@ -936,15 +1360,18 @@ AllCropsFCR <- AllCropsFCR %>%
   mutate(Value = na_if(Value, 0)) %>%
   filter(!is.na(Value))
 
-
-# Drop DFs no longer used
-rm()
-
+rm(AllOtherCropsFCR,
+  AllFieldVegFCR,
+  AllFruitsFCR,
+  AllGHFruitVegFCR,
+  AllFloricultureFCR,
+  AllNurseryFCR,
+  AllSodFCR)
 
 toc()
 ```
 
-## H. Direct Payments
+## J. Direct Payments
 
 Separately, the code below pulls all direct payments and breakdown from the main FCR table.
 
@@ -953,37 +1380,58 @@ Separately, the code below pulls all direct payments and breakdown from the main
 # Start timer
 tic()
 
-# Load the main FCR table for all other commodities without further breakdown
+# Load the main FCR table for direct payments
 AllDirectPaymentsFCR <- get_cansim("32-10-0045") 
 
-# Specify list of vectors to filter for
-vectors <- c(
-  "v170318",  "v170323",  "v170325",
-  "v21567186",  "v54258182",  "v54258193"
-)
-
-# Clean the OtherFCR dataframe
+# Clean the AllDirectPaymentsFCR dataframe
 AllDirectPaymentsFCR <- AllDirectPaymentsFCR %>%
-  mutate(Date = year(Date),  # set data types
-         `Type of cash receipts` = as.character(`Type of cash receipts`),
-         GEO = as.character(GEO)) %>%  
-  filter(Date > date_cutoff,       # filter for date and vector list
-         VECTOR %in% vectors) %>%  
-  rename(Commodity = `Type of cash receipts`,
-         Value = val_norm) %>%  # rename variable
-  select(Date, GEO, Commodity, Value) # keep only these variables
-
+  
+  # Convert Date to year, GEO and Type of cash receipts to character
+  mutate(
+    Date = year(Date),
+    `Type of cash receipts` = as.character(`Type of cash receipts`),
+    GEO = as.character(GEO)
+  ) %>%
+  
+  # Keep only British Columbia
+  filter(
+    GEO == "British Columbia"
+  ) %>%
+  
+  # Keep only the latest year available
+  filter(
+    Date >= max(Date, na.rm = TRUE) - 10
+  ) %>%
+  
+  # Rename Type of cash receipts to Commodity
+  rename(
+    Commodity = `Type of cash receipts`,
+    Value = val_norm
+  ) %>%
+  
+  # Keep selected commodities
+  filter(
+    Commodity %in% c(
+      "Crop insurance payments",
+      "AgriInvest",
+      "Agri-Stability",
+      "Provincial stabilization payments",
+      "Other payments")
+  ) %>%
+  
+  # Keep only required variables
+  select(Date, GEO, Commodity, Value)
 
 toc()
 ```
 
-## I. Crosswalk Reference Table
+## K. Crosswalk Reference Table
 
 The crosswalk reference table is meant to group certain commodities into broader commodity groups such as "fresh fruits" and "field vegetables". They are currently hard-coded given the shorter length of the list in the following chunk.
 
 ```{r Crosswalk}
 # Hard code the reference table
-FCR_ref_breakdown <- tribble(
+Commodity_Crosswalk <- tribble(
   ~Sector, ~Group, ~Commodity,
   "Crops", "Fresh fruits", "Fresh blueberries",
   "Crops", "Fresh fruits", "Fresh cranberries",
@@ -1020,16 +1468,17 @@ FCR_ref_breakdown <- tribble(
   "Crops", "Field vegetables", "Fresh parsnips",
   "Crops", "Field vegetables", "Fresh peppers",
   "Crops", "Field vegetables", "Fresh pumpkins",
-  "Crops", "Field vegetables", "Fresh radishes ",
+  "Crops", "Field vegetables", "Fresh radishes",
   "Crops", "Field vegetables", "Fresh rutabagas and turnips",
   "Crops", "Field vegetables", "Fresh rhubarb",
   "Crops", "Field vegetables", "Fresh spinach",
   "Crops", "Field vegetables", "Fresh squash and zucchini",
   "Crops", "Field vegetables", "Fresh sweet potatoes",
+  "Crops", "Field vegetables", "Fresh & processed mushrooms",
   "Crops", "Field vegetables", "Fresh tomatoes",
   "Crops", "Field vegetables", "Fresh watermelons",
   "Crops", "Field vegetables", "Other fresh melons",
-  "Crops", "Floriculture", "Field-grown cut flowers",
+  "Crops", "Floriculture", "Field-grown flowers",
   "Crops", "Floriculture", "GH floriculture",
   "Crops", "Grains and oilseeds", "Barley",
   "Crops", "Grains and oilseeds", "Canola (including rapeseed)",
@@ -1050,10 +1499,8 @@ FCR_ref_breakdown <- tribble(
   "Crops", "Greenhouse vegetables", "GH sprouts",
   "Crops", "Greenhouse fruits", "GH strawberries",
   "Crops", "Greenhouse vegetables", "GH tomatoes",
-  "Crops", "Greenhouse vegetables", "Other GH Vegetables",
+  "Crops", "Greenhouse vegetables", "Other GH fruits or vegetables",
   "Crops", "Greenhouse vegetables", "GH Chinese vegetables",
-  "Crops", "Floriculture", "GH vegetable bedding plants",
-  "Crops", "Floriculture", "GH ornamental bedding plants",
   "Crops", "Nursery", "GH Nursery",
   "Crops", "Nursery", "Field Nursery",
   "Crops", "Cannabis", "Cannabis seeds, vegetative plants and flowering tops (including leaves)",
@@ -1097,7 +1544,7 @@ FCR_ref_breakdown <- tribble(
 )
 ```
 
-## J. Append All Tables and Join Crosswalk
+## L. Append All Tables and Join Crosswalk
 
 Append AllCropsFCR, AllLIvestockFCR and AllDirectPaymentsFCR into a DF called All_FCR_Detailed.
 
@@ -1111,11 +1558,11 @@ All_FCR_Detailed <- bind_rows(
 
 # left join with reference table
 All_FCR_Detailed <- All_FCR_Detailed %>%
-  left_join(FCR_ref_breakdown, by = "Commodity")
+  left_join(Commodity_Crosswalk, by = "Commodity")
 
 ```
 
-## K. Write .csv and save into data library
+## M. Write .csv and save into data library
 
 As of August 2026, SITS cannot yet directly connect to a SharePoint URL to access the shared Unpublished Data library. The interim workaround is to sync that library to the user's Desktop and change the URL manually. Remember to replace "\\" with "/" and note that the timeout settings is 10 mins because the zip file is large and the default timeout of 1 min is insufficient to download and unzip the file.
 
