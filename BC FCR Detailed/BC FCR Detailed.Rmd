@@ -881,7 +881,7 @@ rm(FCR_Floriculture, FloricultureFieldFCR)
 
 ## G. Sod FCR
 
-Sod estimates from the main FCR table, [Table: 32-10-0045-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210004501), is suppressed for some of the years. A more complete data set can be found from the Annual Greenhouse survey through the following steps:
+Sod estimates from the main FCR table, Table 32-10-0034-01 is suppressed for some of the years. A more complete data set can be found from the Annual Greenhouse survey through the following steps:
 
 1.  Starting by loading sodFCR from the Annual Greenhouse Survey, Table: 32-10-0034-01 into the DF called **AllSodFCR**.
 
