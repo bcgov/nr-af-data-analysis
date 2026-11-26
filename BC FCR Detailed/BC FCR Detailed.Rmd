@@ -87,11 +87,8 @@ Unlike other commodity groups, all detailed livestock data can be found in the m
 tic()
 
 # Load the Livestock table from the main FCR table 
-LivestockFCR <- get_cansim("32-10-0045") 
+LivestockFCR <- get_cansim("32-10-0045") %>%
 
-# Clean the LivestockFCR dataframe
-LivestockFCR <- LivestockFCR %>%
-  
   # Convert Date to year, GEO and Estimates to character
   mutate(
     Date = year(Date),
@@ -99,15 +96,6 @@ LivestockFCR <- LivestockFCR %>%
     GEO = as.character(GEO)
   ) %>%
   
-  # Keep only British Columbia
-  filter(
-    GEO == "British Columbia"
-  ) %>%
-  
-  # Keep only the latest year available
-  filter(
-    Date >= max(Date, na.rm = TRUE) - 10
-  ) %>%
   
   # Rename Type of cash receipts to Commodity
   rename(
@@ -115,8 +103,10 @@ LivestockFCR <- LivestockFCR %>%
     Value = val_norm
   ) %>%
   
-  # Keep selected livestock
+  # Filter for BC, date and commodities
   filter(
+    GEO == "British Columbia",
+    Date >= max(Date, na.rm = TRUE) - 10,
     Commodity %in% c(
       "Cattle",
       "Calves",
@@ -204,11 +194,8 @@ The field vegetable FCR entails more stitching of various tables:
 tic()
 
 # Load the Mushroom table
-MushroomFCR <- get_cansim("32-10-0356")
+MushroomFCR <- get_cansim("32-10-0356") %>%
 
-# Clean the MushroomFCR dataframe
-MushroomFCR <- MushroomFCR %>%
-  
   # Convert Date to year, GEO and Estimates to character
   mutate(
     Date = year(Date),
@@ -216,18 +203,10 @@ MushroomFCR <- MushroomFCR %>%
     GEO = as.character(GEO)
   ) %>%
   
-  # Keep total area harvested
+  # Filter for estimates, BC and date
   filter(
-    Estimates == "Value (fresh and processed), total"
-  ) %>%
-  
-  # Keep only British Columbia
-  filter(
-    GEO == "British Columbia"
-  ) %>%
-  
-  # Keep only the latest year available
-  filter(
+    Estimates == "Value (fresh and processed), total",
+    GEO == "British Columbia",
     Date >= max(Date, na.rm = TRUE) - 10
   ) %>%
   
@@ -249,11 +228,8 @@ MushroomFCR <- MushroomFCR %>%
                                    , maxgap = 2))
 
 # Load the Field Vegetable table
-FieldVegFCR <- get_cansim("32-10-0365") 
+FieldVegFCR <- get_cansim("32-10-0365") %>%
 
-# Clean the FieldVegFCR dataframe
-FieldVegFCR <- FieldVegFCR %>%
-  
   # Convert Date to year, Estimates and Commodity to character
   mutate(
     Date = year(Date),
@@ -261,23 +237,10 @@ FieldVegFCR <- FieldVegFCR %>%
     Estimates = as.character(Estimates)
   ) %>%
   
-  # Keep only the latest year available
-  filter(
-    Date >= max(Date, na.rm = TRUE) - 10
-  ) %>%
-  
-  # Keep only British Columbia
-  filter(
-    GEO == "British Columbia"
-  ) %>%
-  
-  # Filter only for area planted in hectares
-  filter(
-    Estimates == "Farm gate value (dollars)"
-  ) %>%
-  
-  # Exclude these commodities because they are further breakdowns that can be suppressed
-  filter(
+  # Filter for BC, date, estimates and commodity
+  filter(GEO == "British Columbia",
+    Date >= max(Date, na.rm = TRUE) - 10,
+    Estimates == "Farm gate value (dollars)",
     !Commodity %in% c(
       "Total fresh vegetables",
       "Fresh Chinese cabbage",
@@ -307,26 +270,13 @@ FieldVegFCR <- FieldVegFCR %>%
   select(Date, GEO, Commodity, Value)
 
 # Pull FieldVeg total from the main FCR table
-FCR_TotalFieldVeg <- get_cansim("32-10-0045") 
+FCR_TotalFieldVeg <- get_cansim("32-10-0045") %>%
 
-# Clean the FCR_TotalFieldVeg dataframe
-FCR_TotalFieldVeg <- FCR_TotalFieldVeg %>%
-  
   # Convert Date to year, GEO and Estimates to character
   mutate(
     Date = year(Date),
     `Type of cash receipts` = as.character(`Type of cash receipts`),
     GEO = as.character(GEO)
-  ) %>%
-  
-  # Keep only British Columbia
-  filter(
-    GEO == "British Columbia"
-  ) %>%
-  
-  # Keep only the latest year available
-  filter(
-    Date >= max(Date, na.rm = TRUE) - 10
   ) %>%
   
   # Rename Type of cash receipts to Commodity
@@ -335,10 +285,12 @@ FCR_TotalFieldVeg <- FCR_TotalFieldVeg %>%
     Value = val_norm
   ) %>%
   
-  # Keep only field vegetable which includes mushrooms
+  # Filter for BC, date and commodity
   filter(
+    GEO == "British Columbia",
+    Date >= max(Date, na.rm = TRUE) - 10,
     Commodity == "Fresh vegetables - field"
-    ) %>%
+  ) %>%
   
   # Keep only required variables
   select(Date, GEO, Commodity, Value)
@@ -434,11 +386,8 @@ Similar to field vegetables, the total fruits column is dropped and then **AllFR
 tic()
 
 # Load the detailed Fruit table
-FruitsFCR <- get_cansim("32-10-0364") 
+FruitsFCR <- get_cansim("32-10-0364") %>%
 
-# Clean the FruitsFCR dataframe
-FruitsFCR <- FruitsFCR %>%
-  
   # Convert Date to year, Estimates, farm area and Commodity to character
   mutate(
     Date = year(Date),
@@ -446,23 +395,11 @@ FruitsFCR <- FruitsFCR %>%
     Estimates = as.character(Estimates)
     ) %>%
   
-  # Keep only the latest year available
+  # Filter for date, BC, estimates and commodity
   filter(
-    Date >= max(Date, na.rm = TRUE) - 10
-  ) %>%
-  
-  # Keep only British Columbia
-  filter(
-    GEO == "British Columbia"
-  ) %>%
-  
-  # Filter only for area planted in hectares
-  filter(
-    Estimates == "Farm gate value"
-  ) %>%
-  
-  # Exclude these commodities
-  filter(
+    Date >= max(Date, na.rm = TRUE) - 10,
+    GEO == "British Columbia",
+    Estimates == "Farm gate value",
     !Commodity %in% c(
       "Total fresh fruit",
       "Fresh apples",
@@ -488,26 +425,13 @@ FruitsFCR <- FruitsFCR %>%
 
 
 # Pull Fruits total from the main FCR table
-FCR_TotalFruits <- get_cansim("32-10-0045")
+FCR_TotalFruits <- get_cansim("32-10-0045") %>%
 
-# Clean the FCR_TotalFruits dataframe
-FCR_TotalFruits <- FCR_TotalFruits %>%
-  
   # Convert Date to year, GEO and Estimates to character
   mutate(
     Date = year(Date),
     `Type of cash receipts` = as.character(`Type of cash receipts`),
     GEO = as.character(GEO)
-  ) %>%
-  
-  # Keep only British Columbia
-  filter(
-    GEO == "British Columbia"
-  ) %>%
-  
-  # Keep only the latest year available
-  filter(
-    Date >= max(Date, na.rm = TRUE) - 10
   ) %>%
   
   # Rename Type of cash receipts to Commodity
@@ -516,8 +440,10 @@ FCR_TotalFruits <- FCR_TotalFruits %>%
     Value = val_norm
   ) %>%
   
-  # Keep selected fruits
+  # Keep for BC, date and commodity
   filter(
+    GEO == "British Columbia",
+    Date >= max(Date, na.rm = TRUE) - 10,
     Commodity %in% c(
       "Total fresh fruit",
       "Fresh apples",
@@ -593,11 +519,8 @@ The next part is to load the detailed GH fruit vegetable breakdown from [Table 3
 tic()
 
 # Load the GH Fruit & Veg table
-GHFruitVegFCR <- get_cansim("32-10-0456") 
+GHFruitVegFCR <- get_cansim("32-10-0456") %>%
 
-# Clean the GHFruitVegArea dataframe
-GHFruitVegFCR <- GHFruitVegFCR %>%
-  
   # Convert Date to year, Commodity and production value to character
   mutate(
     Date = year(Date),
@@ -605,28 +528,15 @@ GHFruitVegFCR <- GHFruitVegFCR %>%
     `Production and value` = as.character(`Production and value`)
   ) %>%
   
-  # Keep only the latest year available
+  # Filter for date, BC, farm gate value and commodity
   filter(
-    Date >= max(Date, na.rm = TRUE) - 10
-  ) %>%
-  
-  # Keep only British Columbia
-  filter(
-    GEO == "British Columbia"
-  ) %>%
-  
-  # Filter only for area
-  filter(
-    `Production and value` == "Farm gate value"
-  ) %>%
-
-  # Exclude these commodities
-  filter(
+    Date >= max(Date, na.rm = TRUE) - 10,
+    GEO == "British Columbia",
+    `Production and value` == "Farm gate value",
     !Commodity %in% c(
       "Other fresh fruits or vegetables")
   ) %>%
-
-
+  
   # Rename val_norm to Value
   rename(
     Value = val_norm
@@ -639,36 +549,25 @@ GHFruitVegFCR <- GHFruitVegFCR %>%
 GHFruitVegFCR$Commodity <- gsub("Fresh", "GH", GHFruitVegFCR$Commodity)
 
 # Pull GH Fruit & Veg total from the main FCR table
-FCR_TotalGHVeg <- get_cansim("32-10-0045") 
+FCR_TotalGHVeg <- get_cansim("32-10-0045") %>%
 
-# Clean the FCR_TotalGHVeg dataframe
-FCR_TotalGHVeg <- FCR_TotalGHVeg %>%
-  
   # Convert Date to year, GEO and and Type of cash receipt to character
   mutate(
     Date = year(Date),
     `Type of cash receipts` = as.character(`Type of cash receipts`),
     GEO = as.character(GEO)
   ) %>%
-  
-  # Keep only British Columbia
-  filter(
-    GEO == "British Columbia"
-  ) %>%
-  
-  # Keep only the latest year available
-  filter(
-    Date >= max(Date, na.rm = TRUE) - 10
-  ) %>%
-  
+    
   # Rename Type of cash receipts to Commodity
   rename(
     Commodity = `Type of cash receipts`,
     Value = val_norm
   ) %>%
   
-  # Keep only field vegetable which includes mushrooms
+  # Filter for BC, date and commodity
   filter(
+    GEO == "British Columbia",
+    Date >= max(Date, na.rm = TRUE) - 10,
     Commodity == "Fresh vegetables - greenhouse"
   ) %>%
   
@@ -739,11 +638,8 @@ Only data on field floriculture is available so we deduce greenhouse floricultur
 ```{r Floriculture}
 
 # Load the Floriculture Field from the Annual Greenhouse Survey
-FloricultureFieldFCR <- get_cansim("32-10-0452")
+FloricultureFieldFCR <- get_cansim("32-10-0452") %>%
 
-# Clean the FloricultureFieldFCR dataframe
-FloricultureFieldFCR <- FloricultureFieldFCR %>%
-  
   # Convert Date to year, Area and GEO to character
   mutate(
     Date = year(Date),
@@ -751,18 +647,10 @@ FloricultureFieldFCR <- FloricultureFieldFCR %>%
     `Area, production, and sales` = as.character(`Area, production, and sales`)
   ) %>%
   
-  # Keep only British Columbia
+  # Filter for BC, date, total gross sales
   filter(
-    GEO == "British Columbia"
-  ) %>%
-  
-  # Keep only the latest 10 years
-  filter(
-    Date >= max(Date, na.rm = TRUE) - 10
-  ) %>%
-  
-  # Keep only total gross sales
-  filter(
+    GEO == "British Columbia",
+    Date >= max(Date, na.rm = TRUE) - 10,
     `Area, production, and sales` == "Total gross sales"
   ) %>%
   
@@ -806,36 +694,25 @@ FloricultureFieldFCR <- FloricultureFieldFCR %>%
 rm(Backcast2015, fit)
 
 # Load the Floriculture data from the main FCR table 
-FCR_Floriculture <- get_cansim("32-10-0045") 
+FCR_Floriculture <- get_cansim("32-10-0045") %>%
 
-# Clean the FCR_Floriculture dataframe
-FCR_Floriculture <- FCR_Floriculture %>%
-  
   # Convert Date to year, GEO and Estimates to character
   mutate(
     Date = year(Date),
     `Type of cash receipts` = as.character(`Type of cash receipts`),
     GEO = as.character(GEO)
   ) %>%
-  
-  # Keep only British Columbia
-  filter(
-    GEO == "British Columbia"
-  ) %>%
-  
-  # Keep only the latest year available
-  filter(
-    Date >= max(Date, na.rm = TRUE) - 10
-  ) %>%
-  
+    
   # Rename Type of cash receipts to Commodity
   rename(
     Commodity = `Type of cash receipts`,
     Value = val_norm
   ) %>%
   
-  # Keep only total floriculture
+  # Filter for BC, date and commodity
   filter(
+    GEO == "British Columbia",
+    Date >= max(Date, na.rm = TRUE) - 10,
     Commodity == "Floriculture products (except flower seeds)"
   ) %>%
   
@@ -894,10 +771,7 @@ Sod estimates from the main FCR table, Table 32-10-0034-01 is suppressed for som
 ```{r Sod}
 
 # Load Sod FCR from Annual Greenhouse Survey
-AllSodFCR <- get_cansim("32-10-0034-01")
-
-# Clean the GHFruitVegArea dataframe
-AllSodFCR <- AllSodFCR %>%
+AllSodFCR <- get_cansim("32-10-0034-01") %>%
   
   # Convert Date to year and production value to character
   mutate(
@@ -905,18 +779,10 @@ AllSodFCR <- AllSodFCR %>%
     `Area sales and resales` = as.character(`Area sales and resales`)
   ) %>%
   
-  # Keep only the latest year available
+  # Filter for date, BC and total sod sales or gross revenue from sod grown
   filter(
-    Date >= max(Date, na.rm = TRUE) - 10
-  ) %>%
-  
-  # Keep only British Columbia
-  filter(
-    GEO == "British Columbia"
-  ) %>%
-  
-  # Keep selected types of data
-  filter(
+    Date >= max(Date, na.rm = TRUE) - 10,
+    GEO == "British Columbia",
     `Area sales and resales` %in% c(
       "Total sod sales",
       "Gross revenue from sod grown")
@@ -982,26 +848,13 @@ Total nursery FCR is suppressed for some years in the main FCR table, [Table: 32
 tic()
 
 # Load the main FCR table for floriculture, nursery and sod 
-FCR_FNS <- get_cansim("32-10-0045") 
+FCR_FNS <- get_cansim("32-10-0045") %>%
 
-# Clean the FCR_FNS dataframe
-FCR_FNS <- FCR_FNS %>%
-  
   # Convert Date to year, GEO and Estimates to character
   mutate(
     Date = year(Date),
     `Type of cash receipts` = as.character(`Type of cash receipts`),
     GEO = as.character(GEO)
-  ) %>%
-  
-  # Keep only British Columbia
-  filter(
-    GEO == "British Columbia"
-  ) %>%
-  
-  # Keep only the latest year available
-  filter(
-    Date >= max(Date, na.rm = TRUE) - 10
   ) %>%
   
   # Rename Type of cash receipts to Commodity
@@ -1010,8 +863,10 @@ FCR_FNS <- FCR_FNS %>%
     Value = val_norm
   ) %>%
   
-  # Keep selected commodities
+  # Filter for BC, date and commodities
   filter(
+    GEO == "British Columbia",
+    Date >= max(Date, na.rm = TRUE) - 10,
     Commodity %in% c(
       "Floriculture and nursery products, and sod",
       "Floriculture products (except flower seeds)")
@@ -1055,11 +910,8 @@ AllNurseryFCR <- FCR_FNS %>%
   )
 
 # Load the GH Nursery table
-FCR_GH_Floriculture_Nursery <- get_cansim("32-10-0246")
+FCR_GH_Floriculture_Nursery <- get_cansim("32-10-0246") %>%
 
-# Clean the FCR_GH_Floriculture_Nursery dataframe
-FCR_GH_Floriculture_Nursery <- FCR_GH_Floriculture_Nursery %>%
-  
   # Convert Date to year, GEO and Estimates to character
   mutate(
     Date = year(Date),
@@ -1067,26 +919,18 @@ FCR_GH_Floriculture_Nursery <- FCR_GH_Floriculture_Nursery %>%
     GEO = as.character(GEO)
   ) %>%
   
-  # Keep only British Columbia
+  # Filter for BC, date and output
   filter(
-    GEO == "British Columbia"
-  ) %>%
-  
-  # Keep only the latest year available
-  filter(
-    Date >= max(Date, na.rm = TRUE) - 10
-  ) %>%
-  
-  # Rename Value
-  rename(
-    Value = val_norm
-  ) %>%
-  
-  # Keep only Sales
-  filter(
+    GEO == "British Columbia",
+    Date >= max(Date, na.rm = TRUE) - 10,
     Output == "Sales"
   ) %>%
   
+    # Rename Value
+  rename(
+    Value = val_norm
+  ) %>%
+ 
   # Keep only required variables
   select(Date, GEO, Value)
 
@@ -1187,26 +1031,13 @@ A final residual that needs to be calculated is for all other crops through the 
 tic()
 
 # Load the main FCR table for all other commodities without further breakdown
-AllOtherCropsFCR <- get_cansim("32-10-0045") 
+AllOtherCropsFCR <- get_cansim("32-10-0045") %>%
 
-# Clean the AllOtherCropsFCR dataframe
-AllOtherCropsFCR <- AllOtherCropsFCR %>%
-  
   # Convert Date to year, GEO and Type of cash receipts to character
   mutate(
     Date = year(Date),
     `Type of cash receipts` = as.character(`Type of cash receipts`),
     GEO = as.character(GEO)
-  ) %>%
-  
-  # Keep only British Columbia
-  filter(
-    GEO == "British Columbia"
-  ) %>%
-  
-  # Keep only the latest year available
-  filter(
-    Date >= max(Date, na.rm = TRUE) - 10
   ) %>%
   
   # Rename Type of cash receipts to Commodity
@@ -1215,8 +1046,10 @@ AllOtherCropsFCR <- AllOtherCropsFCR %>%
     Value = val_norm
   ) %>%
   
-  # Keep selected commodities
+  # Filter for BC, date and commodity
   filter(
+    GEO == "British Columbia",
+    Date >= max(Date, na.rm = TRUE) - 10,
     Commodity %in% c(
       "Total crop receipts",
       "Cannabis seeds, vegetative plants and flowering tops (including leaves)",
