@@ -1,0 +1,181 @@
+---
+title: "BC Assessment Farm Class"
+author: "Andre Bastos, Leila Bautista"
+date: "2026-11-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## BC Assessment
+
+```{r BC Assessment Farm Class}
+library(data.table)
+library(readr)
+library(dplyr)
+
+# Set working directory: SharePoint
+setwd("C:/Users/lebautis/Government of BC/SICI Data Library Subsite - Unpublished Data")
+
+# Data loading (sources)
+BCA_DF <- fread("2015-2024 BCA Farm Data.csv")
+GEO_REF <- fread("GEO_REF.csv")
+FARM_USE_REF <- fread("FARM_USE_REF.csv")
+
+## Create 'Final Income' variable
+BCA_Farm_Data <- BCA_DF %>% mutate(Final_Income = ifelse(is.na(ADJUSTED_INCOME)==TRUE, 
+                                                         REPORTED_INCOME, ADJUSTED_INCOME))
+
+## Aggregate to unique REGID (farm op)
+BCA_Farm_Data <- BCA_Farm_Data %>% group_by(TAXYR, REGID, JUR_CODE, FARM_USE_CODE, PRODUCTION_YEAR) %>% 
+  summarize(
+    Avg_Final_Income = mean(Final_Income),
+    Avg_Threshold_Income = mean(THRESHOLD_INCOME),
+    Total_Lot_Size_Acres = sum(LOT_SIZE_ACRES),
+    Total_Assessed_Land = sum(TOTAL_ASSESSED_LAND)) %>% 
+  arrange(desc(Total_Assessed_Land))
+
+## Creating <$10K final income group
+BCA_Farm_Data <- BCA_Farm_Data %>% mutate(FINAL_INC_GROUP 
+                                          = ifelse(is.na(Avg_Final_Income)==TRUE,NA,
+                                                   ifelse(Avg_Final_Income<10000, "<10K",
+                                                          ">=10k")))
+
+## Creating <$2.5K final income group
+BCA_Farm_Data <- BCA_Farm_Data %>% mutate(FINAL_INC_GROUP2 
+                                          = ifelse(is.na(Avg_Final_Income)==TRUE,NA,
+                                                   ifelse(Avg_Final_Income<2500, "<2.5K",
+                                                          ">=2.5k")))
+
+## Calculated Income Ratio
+BCA_Farm_Data <- BCA_Farm_Data %>% mutate(Income_Ratio 
+                                          = ifelse(is.na(Avg_Final_Income)==TRUE,NA,
+                                                   Avg_Final_Income/Avg_Threshold_Income))
+
+
+## Creating Land Size group
+BCA_Farm_Data <- BCA_Farm_Data %>% mutate(LAND_SIZE_GROUP 
+                                          = ifelse(is.na(Total_Lot_Size_Acres)==TRUE,NA,
+                                                   ifelse(Total_Lot_Size_Acres>10, ">10",
+                                                          ifelse(Total_Lot_Size_Acres>=2, "2 to 10","<2"))))
+
+## Creating Income Ratio group
+BCA_Farm_Data <- BCA_Farm_Data %>% mutate(IncomeRatioCount 
+                                          = ifelse(is.na(Income_Ratio)==TRUE,NA,
+                                                   ifelse(Income_Ratio>=3, ">3",
+                                                          ifelse(Income_Ratio>=1, "1 to 3","<1"))))
+
+## Calculate Value per Acre
+BCA_Farm_Data <- BCA_Farm_Data %>% mutate(Value_per_acre 
+                                          = ifelse(is.na(Total_Assessed_Land)==TRUE,NA,
+                                                   Total_Assessed_Land/Total_Lot_Size_Acres))
+
+## Left Join with GEO_REF
+BCA_Farm_Data <- BCA_Farm_Data %>% left_join(GEO_REF, by=c("JUR_CODE"), suffix=c("_BCA_Farm_Data", "_GEO_REF"))
+
+## Drop unused columns
+BCA_Farm_Data = subset(BCA_Farm_Data, select = -c(AREA_CODE, REG_CODE))
+
+## Left Join with FARM_USE_REF
+BCA_Farm_Data <- BCA_Farm_Data %>% left_join(FARM_USE_REF, by=c("FARM_USE_CODE"), suffix=c("_BCA_Farm_Data", "_FARM_USE_REF"))
+
+## Replace Value (NA to "Other")
+BCA_Farm_Data <- BCA_Farm_Data %>% 
+  mutate(FARM_USE_DESC = ifelse(is.na(FARM_USE_DESC)==TRUE,"Other", FARM_USE_DESC)) %>% 
+  mutate(FARM_USE_GROUP = ifelse(is.na(FARM_USE_GROUP)==TRUE,"Other", FARM_USE_GROUP)) %>% 
+  mutate(FARM_USE_Sector = ifelse(is.na(FARM_USE_Sector)==TRUE,"Other", FARM_USE_Sector)) 
+
+### Step 2 - Query labeled: Reproduce Power Query tab "Median IR"
+
+## Create 'Final Income' variable
+MedianIR <- BCA_DF %>% mutate(Final_Income = ifelse(is.na(ADJUSTED_INCOME)==TRUE, 
+                                                    REPORTED_INCOME, ADJUSTED_INCOME))
+
+## Aggregate to unique REGID (farm op)
+MedianIR <- MedianIR %>% group_by(TAXYR, REGID, JUR_CODE, FARM_USE_CODE, PRODUCTION_YEAR) %>% 
+  summarize(
+    Avg_Final_Income = mean(Final_Income),
+    Avg_Threshold_Income = mean(THRESHOLD_INCOME),
+    Total_Lot_Size_Acres = sum(LOT_SIZE_ACRES),
+    Total_Assessed_Land = sum(TOTAL_ASSESSED_LAND)) %>% 
+  arrange(desc(Total_Assessed_Land))
+
+## Creating final income group
+MedianIR <- MedianIR %>% mutate(FINAL_INC_GROUP 
+                                = ifelse(is.na(Avg_Final_Income)==TRUE,NA,
+                                         ifelse(Avg_Final_Income<10000, "<10K",
+                                                ">=10k")))
+
+## Creating Land Size group
+MedianIR <- MedianIR %>% mutate(LAND_SIZE_GROUP 
+                                = ifelse(is.na(Total_Lot_Size_Acres)==TRUE,NA,
+                                         ifelse(Total_Lot_Size_Acres>10, ">10",
+                                                ifelse(Total_Lot_Size_Acres>=2, "2 to 10","<2"))))
+
+## Calculated median final and threshold income
+MedianIR <- MedianIR %>% group_by(TAXYR, JUR_CODE, FARM_USE_CODE, FINAL_INC_GROUP, LAND_SIZE_GROUP) %>% 
+  summarize(
+    Median_Final_Income = median(Avg_Final_Income),
+    Median_Threshold_Income = median(Avg_Threshold_Income)) %>% 
+  arrange(desc(Median_Final_Income))
+
+## Calculated Income Ratio
+MedianIR <- MedianIR %>% mutate(Median_Income_Ratio 
+                                = ifelse(is.na(Median_Final_Income)==TRUE,NA,
+                                         Median_Final_Income/Median_Threshold_Income))
+
+## Left Join with GEO_REF
+MedianIR <- MedianIR %>% left_join(GEO_REF, by=c("JUR_CODE"), suffix=c("_MedianIR", "_GEO_REF"))
+
+## Drop unused columns
+MedianIR = subset(MedianIR, select = -c(AREA_CODE, REG_CODE))
+
+## Left Join with FARM_USE_REF
+MedianIR <- MedianIR %>% left_join(FARM_USE_REF, by=c("FARM_USE_CODE"), suffix=c("_MedianIR", "_FARM_USE_REF"))
+
+## Replace Value (NA to "Other")
+MedianIR <- MedianIR %>% mutate(FARM_USE_DESC = ifelse(is.na(FARM_USE_DESC)==TRUE,"Other", FARM_USE_DESC)) %>% 
+  mutate(FARM_USE_GROUP = ifelse(is.na(FARM_USE_GROUP)==TRUE,"Other", FARM_USE_GROUP)) %>% 
+  mutate(FARM_USE_Sector = ifelse(is.na(FARM_USE_Sector)==TRUE,"Other", FARM_USE_Sector)) 
+
+
+
+```
+
+Count farm operations
+
+```{r}
+
+## Aggregate to unique REGID (farm op)
+BCA_FarmOp_Count <- BCA_Farm_Data %>% group_by(TAXYR) %>% 
+  summarize(REGID_count = n())
+
+library(ggplot2)
+
+# Plot as a line chart with points and line of best fit
+ggplot(BCA_FarmOp_Count, aes(x = TAXYR, y = REGID_count)) +
+  geom_line(color = "steelblue", linewidth = 1) +
+  geom_point(color = "steelblue", size = 3) +
+  geom_smooth(method = "lm", se = FALSE, 
+              color = "red", linetype = "dashed", linewidth = 1) +
+  labs(
+    title = "Total REGIDs per Year",
+    x = "Year (TAXYR)",
+    y = "REGID Count"
+  ) +
+  theme_minimal()
+```
+
+Write CSV for analysis
+
+```{r}
+
+# Set working directory
+setwd("C:/Users/lebautis/OneDrive - Government of BC/SICI Projects Subsite - Project Files/2.5e AF Land Working Group/02 Analysis and Results/2026")
+
+# Write the csv file
+
+fwrite(BCA_Farm_Data, "BCA_FarmData_Clean.csv")
+```
