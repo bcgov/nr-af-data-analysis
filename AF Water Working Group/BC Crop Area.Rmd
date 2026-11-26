@@ -788,7 +788,121 @@ FieldCropsArea <- FieldCropsArea %>%
 toc()
 ```
 
-## K. Crosswalk Reference Table
+## K. Cannabis
+
+```{r Cannabis}
+
+# Annotation
+options(scipen = 999)
+Value_PerHectare$Hectares <- round(Value_PerHectare$Hectares, 1)
+Value_PerHectare$ValuePerHectare <- round(Value_PerHectare$ValuePerHectare, 1)
+
+# Annotation
+Value_PerHectare <- Value_PerHectare %>%
+  mutate(
+    Acres = Hectares/2.47105
+  ) %>%
+  mutate(
+    ValuePerAcre = Value / Acres
+  )
+
+# Annotation
+TotalHectare <- 557009 # Source: Stats Can table 32-10-0249 - Land in crops (except Christmas trees)
+
+sum(Value_PerHectare$Hectares[Value_PerHectare$Date == 2021], na.rm = TRUE)
+sum(Value_PerHectare$Hectares[Value_PerHectare$Date == 2025], na.rm = TRUE)
+
+Remainder <- TotalHectare - sum(Value_PerHectare$Hectares[Value_PerHectare$Date == 2021], na.rm = TRUE)
+Remainder
+
+#Cannabis FCR - Canada
+national_cannabis_value <- get_cansim("32-10-0045-01") %>% 
+  filter(GEO == "Canada") %>%
+  filter(`Type of cash receipts` == "Cannabis seeds, vegetative plants and flowering tops (including leaves)") %>%
+  select(REF_DATE, Date, `Type of cash receipts`, val_norm) 
+
+library(rvest)
+library(dplyr)
+library(lubridate)
+library(janitor)
+
+url <- "https://www.canada.ca/en/health-canada/services/drugs-medication/cannabis/research-data/market/licensed-area.html"
+
+# Read all tables from the page
+tables <- url |> 
+  read_html() |> 
+  html_table(fill = TRUE)
+
+# First table = Licensed area
+licensed_area <- tables[[1]]
+
+library(dplyr)
+library(readr)
+library(lubridate)
+
+licensed_area_clean <- licensed_area %>%
+  #Remove table note
+  filter(str_detect(`Year-Month`, "^\\d{4}-\\d{2}$")) %>%
+  
+  # Remove duplicated header/unit row
+  filter(`Year-Month` != "Year-Month") %>%
+  
+  mutate(
+    
+    # Date
+    date = ym(`Year-Month`),
+    year = year(date),
+    
+    # Numeric variables
+    indoor_m2 = parse_number(`Indoor growing area (m2)Reference *`),
+    outdoor_ha = parse_number(`Outdoor growing area (hectares)`),
+    processing_m2 = parse_number(`Processing area (m2)`),
+    building_m2 = parse_number(`Total building area (m2)`),
+    
+    # Convert indoor growing area to hectares
+    indoor_ha = indoor_m2 / 10000,
+    
+    # Total growing area
+    total_growing_ha = indoor_ha + coalesce(outdoor_ha,0)
+  ) %>%
+  filter(date > as.Date("2019-10-01"))
+
+annual_summary <- licensed_area_clean %>%
+  group_by(year) %>%
+  summarise(
+    avg_monthly_growing_ha = mean(total_growing_ha, na.rm = TRUE),
+    max_monthly_growing_ha = max(total_growing_ha, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+Cannabis_Value_PerHectare <- national_cannabis_value %>%
+  mutate(REF_DATE = as.numeric(REF_DATE)) %>%
+  rename(year = REF_DATE) %>%
+  inner_join(annual_summary, by = "year") %>%
+  mutate(
+    value_per_avg_ha = val_norm / avg_monthly_growing_ha,
+    value_per_max_ha = val_norm / max_monthly_growing_ha
+  ) %>%
+  select(
+    year,
+    val_norm,
+    avg_monthly_growing_ha,
+    max_monthly_growing_ha,
+    value_per_avg_ha,
+    value_per_max_ha
+  )
+
+three_year_avg <- Cannabis_Value_PerHectare %>%
+  arrange(desc(year)) %>%
+  slice_head(n = 3) %>%
+  summarise(
+    three_year_avg = mean(value_per_max_ha, na.rm = TRUE)
+  ) %>%
+  pull(three_year_avg)
+three_year_avg
+```
+
+## L. Crosswalk Reference Table
 
 Similar to the Detailed FCR table, the crosswalk reference table is meant to group certain commodities into broader commodity groups such as "fresh fruits" and "field vegetables". They are currently hard-coded given the shorter length of the list in the following chunk and only includes crop commodities.
 
@@ -888,7 +1002,7 @@ Crops_Crosswalk <- tribble(
 )
 ```
 
-## L. Append All Tables and Join Crosswalk
+## M. Append All Tables and Join Crosswalk
 
 1.  Append all the crop area tables into a DF called All_CropsArea.
 
@@ -925,7 +1039,7 @@ Value_PerHectare <- BC_FCR_Detailed %>%
 
 ```
 
-## M. Write .csv and save into data library
+## N. Write .csv and save into data library
 
 As of November 2026, SITS cannot yet directly connect to a SharePoint URL to access the shared Unpublished Data library. The interim workaround is to sync that library to the user's Desktop and change the URL manually. Remember to replace "\\" with "/" and note that the timeout settings is 10 mins because the zip file is large and the default timeout of 1 min is insufficient to download and unzip the file.
 
