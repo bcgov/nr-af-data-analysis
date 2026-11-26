@@ -1,0 +1,259 @@
+---
+title: "Sub-Provincial Farm Count"
+author: "Leila Bautista, Sector Intelligence"
+date: "2026-11-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Sub-Provincial Farm Count
+
+```{r}
+# Load library
+library(pacman)
+p_load(cansim,
+       dplyr,
+       data.table,
+       tidyr,
+       stringr)
+
+# STEP 1: Load Census of Agriculture data for BC total and Census Division (CD) in 2021 by farm type and for total farms which INcludes farms with less than $10K in revenue
+
+CensusAg_AllFarmTypes <- get_cansim("32-10-0231-01") %>%
+  # Rename variables for ease
+  rename(
+    `Farm type` = `North American Industry Classification System (NAICS)`,
+    CensusAgValue = val_norm) %>%
+  # Convert Date to year, GEO and Farm type to character
+  mutate(
+    Date = year(Date),
+    `Farm type` = as.character(`Farm type`),
+    GEO = as.character(GEO)) %>%
+  # Filter for certain GEO and commodity groups
+  filter(
+    GEO %in% 
+      c("British Columbia [PR590000000]",
+        "Capital, British Columbia [CD590117000]",
+        "Cowichan Valley, British Columbia [CD590119000]",
+        "Nanaimo, British Columbia [CD590121000]",
+        "Alberni-Clayoquot, British Columbia [CD590123000]",
+        "Strathcona, British Columbia [CD590124000]",
+        "Comox Valley, British Columbia [CD590126000]",
+        "Powell River, British Columbia [CD590127000]",
+        "Mount Waddington, British Columbia [CD590143000]",
+        "Central Coast, British Columbia [CD590145000]",
+        "Fraser Valley, British Columbia [CD590209000]",
+        "Greater Vancouver, British Columbia [CD590215000]",
+        "Sunshine Coast, British Columbia [CD590229000]",
+        "Squamish-Lillooet, British Columbia [CD590231000]",
+        "Okanagan-Similkameen, British Columbia [CD590307000]",
+        "Thompson-Nicola, British Columbia [CD590333000]",
+        "Central Okanagan, British Columbia [CD590335000]",
+        "North Okanagan, British Columbia [CD590337000]",
+        "Columbia-Shuswap, British Columbia [CD590339000]",
+        "East Kootenay, British Columbia [CD590401000]",
+        "Central Kootenay, British Columbia [CD590403000]",
+        "Kootenay Boundary, British Columbia [CD590405000]",
+        "Cariboo, British Columbia [CD590541000]",
+        "Fraser-Fort George, British Columbia [CD590553000]",
+        "Skeena-Queen Charlotte, British Columbia [CD590647000]",
+        "Kitimat-Stikine, British Columbia [CD590649000]",
+        "Bulkley-Nechako, British Columbia [CD590751000]",
+        "Stikine, British Columbia [CD590757000]",
+        "Peace River, British Columbia [CD590855000]",
+        "Northern Rockies, British Columbia [CD590859000]"),
+    `Farm type` %in% 
+      c("Total number of farms",
+        "Oilseed and grain farming",
+        "Other vegetable (except potato) and melon farming",
+        "Potato farming",
+        "Fruit and tree nut farming ==> Total number of farms",
+        "Greenhouse, nursery and floriculture production",
+        "Other crop farming",
+        "Beef cattle ranching and farming, including feedlots",
+        "Dairy cattle and milk production",
+        "Hog and pig farming ==> Total number of farms",
+        "Poultry and egg production",
+        "Other animal production")) %>%
+  # Rename GEO and farm type categories
+  mutate(
+    GEO = case_when(
+      GEO == "British Columbia [PR590000000]" ~ "British Columbia",
+      TRUE ~ str_remove(GEO, ",.*")),
+    `Farm type` = case_when(
+      `Farm type` == "Total number of farms" ~ "All farm types",
+      TRUE ~ str_remove(`Farm type`, " ==> Total number of farms"))) %>%
+  # Keep only required variables
+  select(Date, GEO, `Farm type`, CensusAgValue) %>%
+  pivot_wider(
+    id_cols = c(Date, GEO),
+    names_from = `Farm type`,
+    values_from = CensusAgValue) %>%
+
+  # Calculate residual "All other farms" as the difference between the total farms count and the sum of all farm types in BC and for each CAR using the Census of Agriculture
+  mutate(across(everything(), ~ tidyr::replace_na(.x, 0)),
+         `All other farms` =
+           `All farm types` -
+           (`Oilseed and grain farming` +
+              `Other vegetable (except potato) and melon farming` +
+              `Potato farming` +
+              `Fruit and tree nut farming` +
+              `Greenhouse, nursery and floriculture production` +
+              `Other crop farming` +
+              `Beef cattle ranching and farming, including feedlots` +
+              `Dairy cattle and milk production` +
+              `Hog and pig farming` +
+              `Poultry and egg production`+
+              `Other animal production`))
+
+# STEP 2: Load ATDP data for BC total in 2021 to the most recent year available for total farms which EXcludes farms with less than $10K in revenue
+ATDP_AllFarmTypes <- get_cansim("32-10-0136-01") %>%
+  # Rename variables for ease
+  rename(
+    ATDPValue = val_norm) %>%
+  # Convert Date to year, Farm type, GEO and 
+  mutate(
+    Date = year(Date),
+    `Farm type` = as.character(`Farm type`),
+    GEO = as.character(GEO),
+    Estimates = as.character(Estimates),
+    `Estimate type` = as.character(`Estimate type`),
+    `Revenue class` = as.character(`Revenue class`)) %>%
+  # Filter for BC, date and commodities
+  filter(
+    Date >= 2021,
+    GEO == "British Columbia",
+    `Farm type` == "All farm types",
+    Estimates == 'Number of farms',
+    `Estimate type` == "Farms reporting",
+    `Revenue class` == "All revenue classes") %>%
+  # Keep only required variables
+  select(Date, GEO, `Farm type`, ATDPValue)
+
+# STEP 3: Calculate the 2021 ratio = ([Census of Agriculture BC total farm count] / [ATDP BC total farm count])
+BC_AllFarmType <- CensusAg_AllFarmTypes %>%
+  # Pivot long by farm type
+  pivot_longer(
+    cols = !c(Date, GEO),
+    names_to = "Farm type",
+    values_to = "CensusAgValue") %>%
+  # Join Census of Ag 2021 with ATDP 2021 onwards
+  right_join(
+    ATDP_AllFarmTypes,
+    by = c("Date", "GEO", "Farm type")) %>%
+  # filter for only all farm types
+  filter(
+    `Farm type` == "All farm types") %>%
+  # Calculate ratio
+  mutate(Ratio = CensusAgValue / ATDPValue) %>%
+  # Fill Ratio up and down
+  fill(Ratio, .direction = "downup") %>%
+  
+# STEP 4: Apply the 2021 ratio to all consequent years in ATDP to get total BC for all farm types to estimate annual total farms Including farms with less than $10K in revenue
+  mutate(
+    AdoptedValue = coalesce(CensusAgValue, ATDPValue * Ratio)) %>%
+  # Drop columns
+  select(-c(ATDPValue, CensusAgValue, Ratio))
+
+# STEP 5: Calculate each farm type's ratio to all farm types in for each region in 2021 using Census of Agriculture data
+CensusAg_Ratio <- CensusAg_AllFarmTypes %>%
+  # Filter for BC total only
+  filter(GEO == "British Columbia") %>%
+  # Valculate each farm type's ratio
+  mutate(
+    across(
+      -c(Date, GEO, `All farm types`),
+      ~ .x / .data[["All farm types"]])) %>%
+  # Drop the column All farm types
+  select(-`All farm types`)
+
+# STEP 6: Apply each farm type's ratio to all farms for each region (calculated in previous step) to each year's estimate for each farm type
+BC_by_FarmType <- BC_AllFarmType %>%
+  # Join Census of Agriculture ratios
+  left_join(
+    CensusAg_Ratio,
+    by = c("Date", "GEO")) %>%
+  # Fill farm type ratios up and down
+  group_by(GEO) %>%
+  arrange(Date, .by_group = TRUE) %>%
+  fill(
+    -c(Date, GEO, `Farm type`, AdoptedValue),
+    .direction = "downup"
+  ) %>%
+  ungroup() %>%
+  # Multiply farm type ratios by AdoptedValue
+  mutate(
+    across(
+      -c(GEO, Date, `Farm type`, AdoptedValue),
+      ~ .x * AdoptedValue
+    )) %>%
+  # Rename AdoptedValue to All farm types
+  rename(
+    `All farm types` = AdoptedValue) %>%
+  # Drop columns
+  select(-`Farm type`) %>%
+  # Pivot long
+  pivot_longer(
+    cols = -c(Date, GEO),
+    names_to = "Farm type",
+    values_to = "AdoptedValue")
+  
+# STEP 7: Calculate ratio of each region to BC for all farm types in 2021 using Census of Agriculture data. 
+CensusAg_RegionRatio <- CensusAg_AllFarmTypes %>%
+  # Pivot long to drop farm type
+  pivot_longer(
+    cols = -c(Date, GEO),
+    names_to = "Farm type",
+    values_to = "Value") %>%
+  # Pivot wide by GEO
+  pivot_wider(
+    id_cols = c(Date, `Farm type`),
+    names_from = GEO,
+    values_from = Value)  %>%
+  # Calculate each region's ratio to BC total
+  mutate(
+    across(
+      -c(Date, `Farm type`),
+      ~ .x / .data[["British Columbia"]])) %>%
+  # Pivot long by GEO
+  pivot_longer(
+    cols = -c(Date, `Farm type`),
+    names_to = "GEO",
+    values_to = "Region_Ratio")
+
+# STEP 8: Apply each regions' ratio to BC total for each year and each farm type
+BC_FarmType_Region <- CensusAg_RegionRatio %>%
+  # Join Census of Agriculture ratios
+  full_join(BC_by_FarmType, 
+            by = c("Date", "Farm type", "GEO")) %>%
+  # Pivot wide by Date
+  pivot_wider(
+    id_cols = c(`Farm type`, GEO, Region_Ratio),
+    names_from = Date,
+    values_from = AdoptedValue) %>%
+  arrange(`Farm type`) %>%
+  # Fill 2021 down
+  fill(`2021`, .direction = "down") %>%
+  # Fill all other columns up
+  fill(
+    -c(`Farm type`, GEO, Region_Ratio, `2021`),
+    .direction = "up") %>%
+  # Drop where Region_Ratio = NA
+  filter(!is.na(Region_Ratio)) %>%
+  # Multiply all columns except Farm type, GEO, and Region_Ratio
+  mutate(
+    across(
+      -c(`Farm type`, GEO, Region_Ratio),
+      ~ .x * Region_Ratio)) %>%
+  # Pivot long by Date
+  pivot_longer(
+    cols = -c(GEO, `Farm type`, Region_Ratio),
+    names_to = "Date",
+    values_to = "Value") %>%
+  #convert Date to year
+  mutate(
+    Date = as.numeric(Date))
+```
