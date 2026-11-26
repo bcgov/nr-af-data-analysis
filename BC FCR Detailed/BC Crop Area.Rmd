@@ -1,0 +1,947 @@
+---
+title: "BC FCR Detailed"
+author: "Leila Bautista, Sector Intelligence"
+date: "2026-07-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## BC Crop Area
+
+This R Markdown document is an annotated set of scripts to calculate BC's average annual crop value per area by combining multiple Statistics Canada (STC) tables into one clean file saved in the team's SharePoint data library. The following are tables used in the script:
+
+- [Table 32-10-0365-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210036501) Area, production and farm gate value of marketed vegetables
+
+- [Table: 32-10-0356-01](https://www150.statcan.gc.ca/t1/tbl1/en/cv.action?pid=3210035601) Area, production and sales of mushrooms
+
+- [Table: 32-10-0358-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210035801) Area, production and farm value of potatoes
+
+- [Table 32-10-0364-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210036401) Area, production and farm gate value of marketed fruits
+
+- [Table 32-10-0456-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210045601) Production and value of greenhouse fruits and vegetables
+
+- [Table 32-10-0246-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210024601) Production and sale of greenhouse flowers and plants
+
+- [Table 32-10-0452-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210045201) Estimates of field-grown cut flowers area, production and sales
+
+- [Table: 32-10-0249-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210024901) Land use, Census of Agriculture, 2021 (for Christmas trees)
+
+- [Table: 32-10-0359-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210035901) Estimated areas, yield, production, average farm price and total farm value of principal field crops, in metric and imperial units
+
+## A. Set-up and load library
+
+Load necessary packages
+
+```{r Set-up}
+
+# Load library
+library(pacman)
+p_load(cansim,
+       dplyr,
+       data.table,
+       tidyr,
+       lubridate,
+       tictoc,
+       splitstackshape,
+       stringr,
+       tibble)
+
+```
+
+## B. BC Detailed FCR
+
+A separate R markdown (RMD) was developed to stitch and calculate various farm cash receipt estimates across STC tables for use in our unit. This chunk loads that data into DF called **BC_FCR_Detailed** and filtered for only crop commodities. The values will serve as the numerator to calculate value per area for each crop type.
+
+```{r}
+# Set working directory
+setwd("C:/Users/lebautis/Government of BC/SICI Data Library Subsite - Unpublished Data")
+
+# Load detailed BC FCR data
+BC_FCR_Detailed <- fread(
+  "C:/Users/lebautis/Government of BC/SICI Data Library Subsite - Unpublished Data/BC_FCR_Detailed.csv"
+)
+
+# Drop selected sectors and commodities
+BC_FCR_Detailed <- BC_FCR_Detailed %>%
+  
+  # Exclude livestock and direct program payments
+  filter(
+    !Sector %in% c(
+      "Livestock",
+      "Direct program payments"
+    )
+  ) %>%
+  
+  # Exclude deferred grain receipt commodities
+  filter(
+    !Commodity %in% c(
+      "Liquidation of deferred grain receipts",
+      "Deferred grain receipts"
+    )
+  )
+```
+
+## C. Field Vegetable Area
+
+1.  Load the mushroom estimates ([Table: 32-10-0356-01](https://www150.statcan.gc.ca/t1/tbl1/en/cv.action?pid=3210035601) in DF called **MushroomArea**). Filter for BC, the last 10 years and area harvested (in square feet). Convert square feet to hectares and rename the value variable to "Hectares" then drop any unwanted variable
+
+2.  Similar to mushrooms, load potatoes (Table: [32-10-0358-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210035801) in DF called PotatoesArea) but no conversion to hectares required which is how it is reported
+
+3.  Load detailed field veg area([Table 32-10-0456-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210045601) in DF called **FieldVegArea**) and clean like mushrooms & potatoes. Fresh cabbage should equal Fresh regular cabbage + Fresh Chinese cabbage + Fresh kale but it is not always the case. For now, only Fresh cabbage is loaded but additional work to calculate "other cabbage" could be done. Similarly, Fresh radishes should equal Fresh radishes (except Asian radishes) + Fresh Asian radishes and other radishes need to be calculated for future iterations of this code to show that breakdown.
+
+4.  Rename commodities to match commodity descriptions in **BC_FCR_Detailed** such as Fresh cucumbers to Fresh cucumbers and fresh gherkins (all varieties) and Other fresh vegetables to Other field vegetables.
+
+5.  Append/row bind mushrooms, potatoes and field veg area DFs into **FieldVegArea**
+
+```{r FieldVeg}
+tic()
+
+# Load the Mushroom table
+MushroomArea <- get_cansim("32-10-0356")
+
+# Clean the MushroomArea dataframe
+MushroomArea <- MushroomArea %>%
+  
+  # Convert Date to year, GEO and Estimates to character
+  mutate(
+    Date = year(Date),
+    Estimates = as.character(Estimates),
+    GEO = as.character(GEO)
+  ) %>%
+  
+  # Keep total area harvested
+  filter(
+    Estimates == "Area harvested, total"
+  ) %>%
+  
+  # Keep only British Columbia
+  filter(
+    GEO == "British Columbia"
+  ) %>%
+  
+  # Keep only the latest year available
+  filter(
+    Date >= max(Date, na.rm = TRUE) - 10
+  ) %>%
+  
+  # Convert square feet to hectares
+  mutate(
+    val_norm = val_norm / 107639.104
+  ) %>%
+  
+  # Rename val_norm to Hectares
+  rename(
+    Hectares = val_norm
+  ) %>%
+  
+  # Keep only required variables
+  select(Date, GEO, Hectares)
+
+# Add commodity variable 
+MushroomArea$Commodity <- "Fresh & processed mushrooms"
+
+# Load the Potatoes Area table
+PotatoesArea <- get_cansim("32-10-0358") 
+
+# Clean the PotatoesArea dataframe
+PotatoesArea <- PotatoesArea %>%
+  
+  # Convert Date to year and Area to character
+  mutate(
+    Date = year(Date),
+    `Area, production and farm value of potatoes` = as.character(`Area, production and farm value of potatoes`)
+  ) %>%
+  
+  # Keep only the latest year available
+  filter(
+    Date >= max(Date, na.rm = TRUE) - 11
+  ) %>%
+  
+  # Keep only British Columbia
+  filter(
+    GEO == "British Columbia"
+  ) %>%
+  
+  
+  # Filter only for harvested area
+  filter(
+    `Area, production and farm value of potatoes` == "Harvested area"
+  ) %>%
+  
+  # Convert acres to hectares
+  mutate(
+    val_norm = val_norm * 0.404686
+  ) %>%
+  
+  # Rename variables
+  rename(
+    Hectares = val_norm
+  ) %>%
+  
+  # Keep only required variables
+  select(Date, GEO, Hectares)
+
+# Add commodity variable 
+PotatoesArea$Commodity <- "Fresh potatoes"
+
+# Load the Field Vegetable table
+FieldVegArea <- get_cansim("32-10-0365") 
+
+# Clean the FieldVegArea dataframe
+FieldVegArea <- FieldVegArea %>%
+  
+  # Convert Date to year and Estimates to character
+  mutate(
+    Date = year(Date),
+    Commodity = as.character(Commodity),
+    Estimates = as.character(Estimates)
+  ) %>%
+
+  # Keep only the latest year available
+  filter(
+    Date >= max(Date, na.rm = TRUE) - 10
+  ) %>%
+  
+  # Keep only British Columbia
+  filter(
+    GEO == "British Columbia"
+  ) %>%
+  
+  # Filter only for area planted in hectares
+  filter(
+    Estimates == "Area planted (hectares)"
+  ) %>%
+  
+  # Exclude these commodities
+  filter(
+    !Commodity %in% c(
+      "Total fresh vegetables",
+      "Fresh Chinese cabbage",
+      "Fresh regular cabbage",
+      "Fresh kale",
+      "Fresh Asian radishes",
+      "Fresh radishes (except Asian radishes)"
+    )
+  ) %>%
+  
+  # Rename commodity categories
+  mutate(
+    Commodity = case_when(
+      Commodity == "Fresh cucumbers" ~ "Fresh cucumbers and fresh gherkins (all varieties)",
+      Commodity == "Other fresh vegetables" ~ "Other field vegetables",
+      TRUE ~ Commodity
+    )
+  ) %>%
+  
+  # Rename val_norm to Hectares
+  rename(
+  Hectares = val_norm
+  ) %>%
+  
+  # Keep only required variables
+  select(Date, GEO, Commodity, Hectares)
+
+# Append Potatoes and Field Veg
+FieldVegArea <- bind_rows(
+  MushroomArea,
+  PotatoesArea,
+  FieldVegArea)
+
+rm(MushroomArea, PotatoesArea)
+
+(toc)
+```
+
+## D. Fruits Area
+
+1.  Load detailed fruits area into DF called **FruitsArea** from [Table 32-10-0364-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210036401) and cleaned like field vegetables for BC and estimates for area
+
+2.  Filter out highbush vs. lowbush blueberries and labrusca vs. vinifera grapes because FCR is at the higher, more aggregated levels of blueberries and grapes
+
+3.  Replace Other fresh fruit, n.e.c. with Other fresh fruits and rename the value column with "Hectares"
+
+```{r Fruits}
+
+tic()
+
+# Load the detailed Fruit table
+FruitsArea <- get_cansim("32-10-0364") 
+
+
+# Clean the FruitsArea dataframe
+FruitsArea <- FruitsArea %>%
+  
+  # Convert Date to year, Commodity and Estimates to character
+  mutate(
+    Date = year(Date),
+    Commodity = as.character(Commodity),
+    Estimates = as.character(Estimates)
+  ) %>%
+  
+  # Keep only the latest year available
+  filter(
+    Date >= max(Date, na.rm = TRUE) - 10
+  ) %>%
+  
+  # Keep only British Columbia
+  filter(
+    GEO == "British Columbia"
+  ) %>%
+  
+  # Filter only for bearing area
+  filter(
+    Estimates == "Bearing area"
+  ) %>%
+  
+  # Filter only for Hectares
+  filter(
+    `Farm area, production, value` == "Hectares"
+  ) %>%
+  
+  # Exclude these commodities
+  filter(
+    !Commodity %in% c(
+      "Total fresh fruit",
+      "Fresh highbush blueberries",
+      "Fresh lowbush blueberries",
+      "Fresh Labrusca grapes",
+      "Fresh vinifera, fresh French hybrid grapes"
+    )
+  ) %>%
+  
+  # Rename commodity categories
+  mutate(
+    Commodity = case_when(
+      Commodity == "Other fresh fruit, n.e.c." ~ "Other fresh fruits",
+      TRUE ~ Commodity
+    )
+  ) %>%
+  
+  # Rename val_norm to Hectares
+  rename(
+    Hectares = val_norm
+  ) %>%
+  
+  # Keep only required variables
+  select(Date, GEO, Commodity, Hectares)
+
+toc()
+```
+
+## E. Greenhouse Fruits & Vegetables Area
+
+1.  Load the detailed GH vegetable breakdown from [Table 32-10-0456-01](https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=3210045601) and we replace "fresh" with GH to distinguish from field-grown vegetables.
+
+2.  Filter out fresh sprouts which is always suppressed for BC and convert square feet to hectares
+
+```{r GHFruitVeg}
+
+tic()
+
+# Load the GH Veg table
+GHFruitVegArea <- get_cansim("32-10-0456") 
+
+# Clean the GHFruitVegArea dataframe
+GHFruitVegArea <- GHFruitVegArea %>%
+  
+  # Convert Date to year,  Commodity and Estimates to character
+  mutate(
+    Date = year(Date),
+    Commodity = as.character(Commodity),
+    Estimates = as.character(Estimates),
+    `Production and value` = as.character(`Production and value`)
+  ) %>%
+  
+  # Keep only the latest year available
+  filter(
+    Date >= max(Date, na.rm = TRUE) - 10
+  ) %>%
+  
+  # Keep only British Columbia
+  filter(
+    GEO == "British Columbia"
+  ) %>%
+  
+  # Filter only for area
+  filter(
+    Estimates == "Square feet"
+  ) %>%
+  
+  # Filter only for hectares
+  filter(
+    `Production and value` == "Area harvested"
+  ) %>%
+  
+  # Exclude these commodities
+  filter(
+    !Commodity == "Fresh sprouts"
+  ) %>%
+
+  # Convert square feet to hectares
+  mutate(
+    val_norm = val_norm / 107639.104
+  ) %>%
+  
+  # Rename val_norm to Hectares
+  rename(
+    Hectares = val_norm
+  ) %>%
+  
+  # Keep only required variables
+  select(Date, GEO, Commodity, Hectares)
+
+# Replace fresh with GH
+GHFruitVegArea$Commodity <- gsub("Fresh", "GH", GHFruitVegArea$Commodity)
+GHFruitVegArea$Commodity <- gsub("fresh", "GH", GHFruitVegArea$Commodity)
+
+toc()
+```
+
+## F. Sod Area
+
+Start by loading Table 32-10-0034 sod into the DF called **SodArea** and clean by filtering to BC and estimates in hectares. Since sod is the only commodity, a commodity variable is introduced with values = "Sod"
+
+```{r Sod}
+
+# Load the Sod table
+SodArea <- get_cansim("32-10-0034") 
+
+# Clean the SodArea dataframe
+SodArea <- SodArea %>%
+  
+  # Convert Date to year, Estimates and area to character
+  mutate(
+    Date = year(Date),
+    Estimates = as.character(Estimates),
+    `Area sales and resales` = as.character(`Area sales and resales`)
+  ) %>%
+  
+  # Keep only the latest year available
+  filter(
+    Date >= max(Date, na.rm = TRUE) - 10
+  ) %>%
+  
+  # Keep only British Columbia
+  filter(
+    GEO == "British Columbia"
+  ) %>%
+  
+  # Filter only for area
+  filter(
+    Estimates == "Hectares"
+  ) %>%
+  
+  # Filter only for acres
+  filter(
+    `Area sales and resales` == "Total sod area"
+  ) %>%
+  
+  # Rename val_norm to Hectares
+  rename(
+    Hectares = val_norm
+  ) %>%
+  
+  # Keep only required variables
+  select(Date, GEO, Hectares)
+
+# Add commodity variable 
+SodArea$Commodity <- "Sod"
+```
+
+## G. Nursery
+
+Start by loading Table 32-10-0029 and cleaning the data by year, BC only and for estimates = hectares and area for total field and container area then rename the variables to match BC Detailed FCR commodity names.
+
+```{r Nursery}
+
+tic()
+
+# Load the Nursery Area table
+NurseryArea <- get_cansim("32-10-0029") 
+
+# Clean the NurseryArea dataframe
+NurseryArea <- NurseryArea %>%
+  
+  # Convert Date to year, Estimates amd Area to character
+  mutate(
+    Date = year(Date),
+    Estimates = as.character(Estimates),
+    Area = as.character(Area)
+  ) %>%
+  
+  # Keep only the latest year available
+  filter(
+    Date >= max(Date, na.rm = TRUE) - 10
+  ) %>%
+  
+  # Keep only British Columbia
+  filter(
+    GEO == "British Columbia"
+  ) %>%
+  
+  # Filter only for area
+  filter(
+    Estimates == "Hectares"
+  ) %>%
+  
+  # Filter only for area
+  filter(
+    Area %in% c(
+      "Total field area",
+      "Total container area"
+    )
+  ) %>%
+  
+  # Rename variables
+  rename(
+    Hectares = val_norm,
+    Commodity = Area
+  ) %>%
+  
+  # Rename commodity categories
+  mutate(
+    Commodity = case_when(
+      Commodity == "Total field area" ~ "Field Nursery",
+      Commodity == "Total container area" ~ "GH Nursery",
+      TRUE ~ Commodity
+    )
+  ) %>%
+  
+  # Keep only required variables
+  select(Date, GEO, Hectares, Commodity)
+
+toc()
+```
+
+## H. Floriculture
+
+1.  GH floriculture area is pulled from Table 32-10-0019 and filtered for most recent 10 years, British Columbia, Estimates = square feet, type of greenhouse operations and producer type.
+2.  Convert square feet to hectares and rename the value column to hectares along with the commodity and drop any unused columns
+3.  Similar steps apply for field floriculture coming from table 32-10-0452
+
+```{r Floriculture}
+
+tic()
+
+# Load the GH Floriculture Area table
+GHFloricultureArea <- get_cansim("32-10-0019") 
+
+# Clean the GHFloricultureArea dataframe
+GHFloricultureArea <- GHFloricultureArea %>%
+  
+  # Convert Date to year, Estimates, Area and Producer type to character
+  mutate(
+    Date = year(Date),
+    Estimates = as.character(Estimates),
+    Area = as.character(Area),
+    `Producer type` = as.character(`Producer type`)
+  ) %>%
+  
+  # Keep only the latest year available
+  filter(
+    Date >= max(Date, na.rm = TRUE) - 10
+  ) %>%
+  
+  # Keep only British Columbia
+  filter(
+    GEO == "British Columbia"
+  ) %>%
+  
+  # Filter only for Square feet
+  filter(
+    Estimates == "Square feet"
+  ) %>%
+  
+  # Filter only for total greenhouse operations
+  filter(
+    Area == "Total greenhouse area"
+  ) %>%
+  
+  # Filter only for producer type
+  filter(
+    `Producer type` == "Specialized greenhouse flowers and plants"
+  ) %>%
+  
+  # Convert square feet to acres
+  mutate(
+    val_norm = val_norm / 107639.104
+  ) %>%
+  
+  # Rename variables
+  rename(
+    Hectares = val_norm,
+    Commodity = Area
+  ) %>%
+  
+  # Rename commodity categories
+  mutate(
+    Commodity = case_when(
+      Commodity == "Total greenhouse area" ~ "GH floriculture",
+      TRUE ~ Commodity
+    )
+  ) %>%
+  
+  # Keep only required variables
+  select(Date, GEO, Hectares, Commodity)
+
+# Load the Field Floriculture Area table
+FieldFloricultureArea <- get_cansim("32-10-0452") 
+
+# Clean the FieldFloricultureArea dataframe
+FieldFloricultureArea <- FieldFloricultureArea %>%
+  
+  # Convert Date to year and Estimates to character
+  mutate(
+    Date = year(Date),
+    Estimates = as.character(Estimates),
+    `Area, production, and sales` = as.character(`Area, production, and sales`)
+  ) %>%
+  
+  # Keep only the latest year available
+  filter(
+    Date >= max(Date, na.rm = TRUE) - 10
+  ) %>%
+  
+  # Keep only British Columbia
+  filter(
+    GEO == "British Columbia"
+  ) %>%
+  
+  # Filter only for Hectares
+  filter(
+    Estimates == "Hectares"
+  ) %>%
+  
+  # Filter only for total field-grown flowers
+  filter(
+    `Area, production, and sales` == "Total field-grown flowers area"
+  ) %>%
+  
+    # Rename variables
+  rename(
+    Hectares = val_norm,
+    Commodity = `Area, production, and sales`
+  ) %>%
+  
+  # Rename commodity categories
+  mutate(
+    Commodity = case_when(
+      Commodity == "Total field-grown flowers area" ~ "Field-grown flowers",
+      TRUE ~ Commodity
+    )
+  ) %>%
+
+  # Keep only required variables
+  select(Date, GEO, Hectares, Commodity)
+
+# Append both GH and field grown flowers
+FloricultureArea <- bind_rows(
+  FieldFloricultureArea,
+  GHFloricultureArea)
+
+# Drop these DFs
+rm(FieldFloricultureArea,
+   GHFloricultureArea)
+
+toc()
+```
+
+## I. Christmas Trees
+
+Christmas tree area is only available for 2021 from the Census of Agriculture's table 32-10-0249. Similar cleaning steps are done in addition to renaming British Columbia to drop the Census of Agriculture geography code.
+
+```{r ChristmasTree}
+
+tic()
+
+# Load the Christmas Tree Area table
+ChristmasTreeArea <- get_cansim("32-10-0249") 
+
+# Clean the ChristmasTreeArea dataframe
+ChristmasTreeArea <- ChristmasTreeArea %>%
+  
+  # Convert Date to year, Estimates amd Area to character
+  mutate(
+    Date = year(Date),
+    `Land use` = as.character(`Land use`),
+    `Unit of measure` = as.character(`Unit of measure`)
+  ) %>%
+  
+  # Keep only British Columbia
+  filter(
+    GEO == "British Columbia [PR590000000]"
+  ) %>%
+  
+  # Filter only for area
+  filter(
+    `Unit of measure` == "Hectares"
+  ) %>%
+  
+  # Filter only for area
+  filter(
+    `Land use` == "Christmas trees grown for sale"
+  ) %>%
+  
+  # Rename variables
+  rename(
+    Hectares = val_norm,
+    Commodity = `Land use`
+  ) %>%
+  
+  # Rename commodity categories
+  mutate(
+    Commodity = case_when(
+      Commodity == "Christmas trees grown for sale" ~ "Christmas trees",
+      TRUE ~ Commodity
+    )
+  ) %>%
+  
+  # Rename GEO categories
+  mutate(
+    GEO = case_when(
+      GEO == "British Columbia [PR590000000]" ~ "British Columbia",
+      TRUE ~ GEO
+    )
+  ) %>%
+  
+  # Keep only required variables
+  select(Date, GEO, Hectares, Commodity)
+
+toc()
+```
+
+## J. Field Crops Area
+
+Field crops area come from table 32-10-0359 and is filtered slightly differently for the last 11 years and not the most recent year because it is released in January of each year to match the years for the other DFs. The commodity names also needed to be updated to match Detailed FCR table.
+
+```{r FieldCrops}
+
+# Start timer
+tic()
+
+# Load the Field Crops Area table
+FieldCropsArea <- get_cansim("32-10-0359") 
+
+# Clean the FieldCropsArea dataframe
+FieldCropsArea <- FieldCropsArea %>%
+  
+  # Convert Date to year, Harvest disposition and Type of crop to character
+  mutate(
+    Date = year(Date),
+    `Harvest disposition` = as.character(`Harvest disposition`),
+    `Type of crop` = as.character(`Type of crop`)
+  ) %>%
+  
+  # Keep the latest complete year and 11 years prior and not the most recent year
+  filter(
+    Date >= max(Date, na.rm = TRUE) - 11,
+    Date <= max(Date, na.rm = TRUE) - 1
+  ) %>%
+  
+  # Keep only British Columbia
+  filter(
+    GEO == "British Columbia"
+  ) %>%
+  
+  # Keep selected field crops
+  filter(
+    `Type of crop` %in% c(
+      "Canola (rapeseed)",
+      "Wheat, all excluding durum wheat",
+      "Oats",
+      "Barley",
+      "Peas, dry",
+      "Rye, all",
+      "Tame hay"
+    )
+  ) %>%
+  
+  # Filter only for area
+  filter(
+    `Harvest disposition` == "Harvested area (hectares)"
+  ) %>%
+  
+    # Rename variables
+  rename(
+    Hectares = val_norm,
+    Commodity = `Type of crop`
+  ) %>%
+  
+  # Rename commodity categories
+  mutate(
+    Commodity = case_when(
+      Commodity == "Canola (rapeseed)" ~ "Canola (including rapeseed)",
+      Commodity == "Wheat, all excluding durum wheat" ~ "Wheat (except durum wheat)",
+      Commodity == "Peas, dry" ~ "Dry peas",
+      Commodity == "Rye, all" ~ "Rye",
+      Commodity == "Tame hay" ~ "Hay",
+      TRUE ~ Commodity
+    )
+  ) %>%
+
+  # Keep only required variables
+  select(Date, GEO, Hectares, Commodity)
+
+toc()
+```
+
+## K. Crosswalk Reference Table
+
+Similar to the Detailed FCR table, the crosswalk reference table is meant to group certain commodities into broader commodity groups such as "fresh fruits" and "field vegetables". They are currently hard-coded given the shorter length of the list in the following chunk and only includes crop commodities.
+
+```{r Crosswalk}
+# Hard code the reference table
+Crops_Crosswalk <- tribble(
+  ~Sector, ~Group, ~Commodity,
+  "Crops", "Fresh fruits", "Fresh blueberries",
+  "Crops", "Fresh fruits", "Fresh cranberries",
+  "Crops", "Fresh fruits", "Fresh grapes",
+  "Crops", "Fresh fruits", "Fresh raspberries",
+  "Crops", "Fresh fruits", "Fresh strawberries",
+  "Crops", "Fresh fruits", "Fresh currants",
+  "Crops", "Fresh fruits", "Fresh haskaps",
+  "Crops", "Fresh fruits", "Fresh saskatoon berries",
+  "Crops", "Fresh fruits", "Fresh blackberries",
+  "Crops", "Field vegetables", "Fresh asparagus",
+  "Crops", "Field vegetables", "Fresh green and wax beans",
+  "Crops", "Field vegetables", "Fresh beets",
+  "Crops", "Field vegetables", "Fresh broccoli",
+  "Crops", "Field vegetables", "Fresh Brussels sprouts",
+  "Crops", "Field vegetables", "Fresh cabbage",
+  "Crops", "Field vegetables", "Fresh carrots",
+  "Crops", "Field vegetables", "Fresh cauliflowers",
+  "Crops", "Field vegetables", "Fresh celery",
+  "Crops", "Field vegetables", "Fresh sweet corn",
+  "Crops", "Field vegetables", "Fresh cucumbers and fresh gherkins (all varieties)",
+  "Crops", "Field vegetables", "Fresh eggplants (except Chinese eggplants)",
+  "Crops", "Field vegetables", "Fresh garlic",
+  "Crops", "Field vegetables", "Fresh French shallots and green onions",
+  "Crops", "Field vegetables", "Fresh green peas",
+  "Crops", "Field vegetables", "Fresh leeks",
+  "Crops", "Field vegetables", "Fresh lettuce",
+  "Crops", "Field vegetables", "Fresh dry onions",
+  "Crops", "Field vegetables", "Other asian vegetables",
+  "Crops", "Field vegetables", "Other field vegetables",
+  "Crops", "Field vegetables", "Other fresh fine herbs",
+  "Crops", "Field vegetables", "Other melons",
+  "Crops", "Field vegetables", "Fresh parsley",
+  "Crops", "Field vegetables", "Fresh parsnips",
+  "Crops", "Field vegetables", "Fresh peppers",
+  "Crops", "Field vegetables", "Fresh pumpkins",
+  "Crops", "Field vegetables", "Fresh radishes",
+  "Crops", "Field vegetables", "Fresh rutabagas and turnips",
+  "Crops", "Field vegetables", "Fresh rhubarb",
+  "Crops", "Field vegetables", "Fresh spinach",
+  "Crops", "Field vegetables", "Fresh squash and zucchini",
+  "Crops", "Field vegetables", "Fresh sweet potatoes",
+  "Crops", "Field vegetables", "Fresh & processed mushrooms",
+  "Crops", "Field vegetables", "Fresh tomatoes",
+  "Crops", "Field vegetables", "Fresh watermelons",
+  "Crops", "Field vegetables", "Other fresh melons",
+  "Crops", "Floriculture", "Field-grown flowers",
+  "Crops", "Floriculture", "GH floriculture",
+  "Crops", "Grains and oilseeds", "Barley",
+  "Crops", "Grains and oilseeds", "Canola (including rapeseed)",
+  "Crops", "Grains and oilseeds", "Deferred grain receipts",
+  "Crops", "Grains and oilseeds", "Liquidation of deferred grain receipts",
+  "Crops", "Grains and oilseeds", "Oats",
+  "Crops", "Grains and oilseeds", "Wheat (except durum wheat)",
+  "Crops", "Grains and oilseeds", "Rye",
+  "Crops", "Grains and oilseeds", "Flaxseed",
+  "Crops", "Grains and oilseeds", "Sunflower seeds",
+  "Crops", "Greenhouse vegetables", "GH cucumbers",
+  "Crops", "Greenhouse vegetables", "GH eggplants (except Chinese eggplants)",
+  "Crops", "Greenhouse vegetables", "GH fine herbs",
+  "Crops", "Greenhouse vegetables", "GH green and wax beans",
+  "Crops", "Greenhouse vegetables", "GH lettuce",
+  "Crops", "Greenhouse vegetables", "GH microgreens and shoots",
+  "Crops", "Greenhouse vegetables", "GH peppers",
+  "Crops", "Greenhouse vegetables", "GH sprouts",
+  "Crops", "Greenhouse fruits", "GH strawberries",
+  "Crops", "Greenhouse vegetables", "GH tomatoes",
+  "Crops", "Greenhouse vegetables", "Other GH fruits or vegetables",
+  "Crops", "Greenhouse vegetables", "GH Chinese vegetables",
+  "Crops", "Nursery", "GH Nursery",
+  "Crops", "Nursery", "Field Nursery",
+  "Crops", "Cannabis", "Cannabis seeds, vegetative plants and flowering tops (including leaves)",
+  "Crops", "Other crops", "Christmas trees",
+  "Crops", "Other crops", "Dry peas",
+  "Crops", "Forage & hay", "Forage seeds and grass seeds",
+  "Crops", "Other crops", "Forest products",
+  "Crops", "Other crops", "Fresh potatoes",
+  "Crops", "Other crops", "Ginseng root for medicinal use",
+  "Crops", "Forage & hay", "Hay",
+  "Crops", "Other crops", "Other crops",
+  "Crops", "Fresh fruits", "Other fresh fruits",
+  "Crops", "Sod", "Sod",
+  "Crops", "Fresh fruits", "Fresh apples",
+  "Crops", "Fresh fruits", "Fresh apricots",
+  "Crops", "Fresh fruits", "Fresh sweet cherries",
+  "Crops", "Fresh fruits", "Fresh sour cherries",
+  "Crops", "Fresh fruits", "Fresh nectarines",
+  "Crops", "Fresh fruits", "Fresh peaches",
+  "Crops", "Fresh fruits", "Fresh pears",
+  "Crops", "Fresh fruits", "Fresh plums and prune plums"
+)
+```
+
+## L. Append All Tables and Join Crosswalk
+
+1.  Append all the crop area tables into a DF called All_CropsArea.
+
+2.  Join All_CropsArea DF with BC_FCR_Detailed DF and calculate a new column called ValuePerHectare by dividing the Value column against the Hectares column
+
+```{r Append}
+
+# Append All tables
+All_CropsArea <- bind_rows(
+  FieldCropsArea,
+  FieldVegArea,
+  FloricultureArea,
+  FruitsArea,
+  GHFruitVegArea,
+  NurseryArea,
+  ChristmasTreeArea,
+  SodArea)
+
+# left join with reference table
+All_CropsArea <- All_CropsArea %>%
+  left_join(Crops_Crosswalk, by = "Commodity")
+
+# Join area and value data and calculate value per hectare
+Value_PerHectare <- BC_FCR_Detailed %>%
+  left_join(
+    All_CropsArea,
+    by = c("Commodity", "Date", "Sector", "Group", "GEO")
+  ) %>%
+  
+  # Calculate value per hectare
+  mutate(
+    ValuePerHectare = Value / Hectares
+  )
+
+```
+
+## M. Write .csv and save into data library
+
+As of November 2026, SITS cannot yet directly connect to a SharePoint URL to access the shared Unpublished Data library. The interim workaround is to sync that library to the user's Desktop and change the URL manually. Remember to replace "\\" with "/" and note that the timeout settings is 10 mins because the zip file is large and the default timeout of 1 min is insufficient to download and unzip the file.
+
+Until BC Gov admins grant access, SharePoint files cannot easily be pulled using the **M365** R package. The temporary workaround is to sync the Unpublished Data Library with each user's desktop which needs to be updated in the code:
+
+```         
+"C:/Users/[replace with IDIR]/Government of BC/SICI Data Library Subsite - Unpublished Data"
+```
+
+```{r Write}
+
+# Set working directory
+setwd("C:/Users/lebautis/Government of BC/SICI Data Library Subsite - Unpublished Data")
+
+# Write the csv file
+
+fwrite(Value_PerHectare, "C:/Users/lebautis/Government of BC/SICI Data Library Subsite - Unpublished Data/BC_Value_PerHectare.csv")
+
+```
