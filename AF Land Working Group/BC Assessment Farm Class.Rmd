@@ -9,7 +9,17 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## BC Assessment
+# BC Assessment
+
+This R markdown was developed to load, clean and analyze BC Assessment microdata on farm classified properties going back to 2015. The microdata includes addresses and is therefore confidential. Please contact ALSTATS\@gov.bc.ca if you have questions.
+
+## Farm Operation Count
+
+This chunk cleans the original data frame (DF) by:
+
+- Creating a "final income" variable = reported income if adjusted income is null
+
+- Groups by unique farm operations for year, jurisdiction and farm use and takes the mean final income, mean assessed value (of land) and sums the lot size
 
 ```{r BC Assessment Farm Class}
 library(data.table)
@@ -87,7 +97,32 @@ BCA_Farm_Data <- BCA_Farm_Data %>%
   mutate(FARM_USE_GROUP = ifelse(is.na(FARM_USE_GROUP)==TRUE,"Other", FARM_USE_GROUP)) %>% 
   mutate(FARM_USE_Sector = ifelse(is.na(FARM_USE_Sector)==TRUE,"Other", FARM_USE_Sector)) 
 
-### Step 2 - Query labeled: Reproduce Power Query tab "Median IR"
+## Aggregate to unique REGID (farm op)
+BCA_FarmOp_Count <- BCA_Farm_Data %>% group_by(TAXYR) %>% 
+  summarize(REGID_count = n())
+
+library(ggplot2)
+
+# Plot as a line chart with points and line of best fit
+ggplot(BCA_FarmOp_Count, aes(x = TAXYR, y = REGID_count)) +
+  geom_line(color = "steelblue", linewidth = 1) +
+  geom_point(color = "steelblue", size = 3) +
+  geom_smooth(method = "lm", se = FALSE, 
+              color = "red", linetype = "dashed", linewidth = 1) +
+  labs(
+    title = "Total REGIDs per Year",
+    x = "Year (TAXYR)",
+    y = "REGID Count"
+  ) +
+  theme_minimal()
+
+```
+
+## Median Income Ratio
+
+This chunk creates a separate DF that calculates the median income ratio across all farm operations within each unique year, jurisdiction and farm use.
+
+```{r}
 
 ## Create 'Final Income' variable
 MedianIR <- BCA_DF %>% mutate(Final_Income = ifelse(is.na(ADJUSTED_INCOME)==TRUE, 
@@ -141,34 +176,9 @@ MedianIR <- MedianIR %>% mutate(FARM_USE_DESC = ifelse(is.na(FARM_USE_DESC)==TRU
   mutate(FARM_USE_Sector = ifelse(is.na(FARM_USE_Sector)==TRUE,"Other", FARM_USE_Sector)) 
 
 
-
 ```
 
-Count farm operations
-
-```{r}
-
-## Aggregate to unique REGID (farm op)
-BCA_FarmOp_Count <- BCA_Farm_Data %>% group_by(TAXYR) %>% 
-  summarize(REGID_count = n())
-
-library(ggplot2)
-
-# Plot as a line chart with points and line of best fit
-ggplot(BCA_FarmOp_Count, aes(x = TAXYR, y = REGID_count)) +
-  geom_line(color = "steelblue", linewidth = 1) +
-  geom_point(color = "steelblue", size = 3) +
-  geom_smooth(method = "lm", se = FALSE, 
-              color = "red", linetype = "dashed", linewidth = 1) +
-  labs(
-    title = "Total REGIDs per Year",
-    x = "Year (TAXYR)",
-    y = "REGID Count"
-  ) +
-  theme_minimal()
-```
-
-Write CSV for analysis
+## Write CSV for analysis
 
 ```{r}
 
